@@ -150,3 +150,23 @@ resource "aws_iam_role_policy_attachment" "control_tower_config_aggregator_manag
   role       = aws_iam_role.control_tower_config_aggregator.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSConfigRoleForOrganizations"
 }
+
+# -----------------------------------------------------------------------------
+# IAM propagation delay
+#
+# IAM is eventually consistent. New roles and policy attachments can take a few
+# seconds to propagate globally before Control Tower can assume them.
+# This sleep sits between the role/policy resources and the landing zone so
+# CreateLandingZone never races against IAM propagation.
+# -----------------------------------------------------------------------------
+resource "time_sleep" "ct_iam_propagation" {
+  create_duration = "10s"
+
+  depends_on = [
+    aws_iam_role_policy_attachment.control_tower_admin_service_role,
+    aws_iam_role_policy.control_tower_admin_inline,
+    aws_iam_role_policy_attachment.control_tower_cloudtrail_managed,
+    aws_iam_role_policy.control_tower_stackset_inline,
+    aws_iam_role_policy_attachment.control_tower_config_aggregator_managed,
+  ]
+}

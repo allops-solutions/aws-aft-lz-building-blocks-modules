@@ -134,14 +134,11 @@ resource "aws_controltower_landing_zone" "this" {
   version           = var.landing_zone_version
   remediation_types = ["INHERITANCE_DRIFT"] # https://docs.aws.amazon.com/controltower/latest/userguide/account-auto-enrollment.html
 
-  # Prerequisite roles must exist before CreateLandingZone is called.
-  # CT needs them to perform its own setup; they don't exist until we create them.
+  # Wait for prerequisite roles to exist AND for IAM to propagate them globally.
+  # CT needs to assume these roles during CreateLandingZone; a race here causes
+  # a ValidationException even though the roles were just successfully created.
   depends_on = [
-    aws_iam_role_policy_attachment.control_tower_admin_service_role,
-    aws_iam_role_policy.control_tower_admin_inline,
-    aws_iam_role_policy_attachment.control_tower_cloudtrail_managed,
-    aws_iam_role_policy.control_tower_stackset_inline,
-    aws_iam_role_policy_attachment.control_tower_config_aggregator_managed,
+    time_sleep.ct_iam_propagation,
     aws_ram_sharing_with_organization.this,
   ]
 }

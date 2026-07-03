@@ -1,5 +1,38 @@
 # Changelog
 
+## [v1.0] - 2026-07-03
+
+### Added
+
+- Initial release of the control-tower module
+- **Control Tower landing zone provisioning** via `aws_controltower_landing_zone` with configurable manifest (requires AWS Provider >= 6.0.0)
+- **Prerequisite IAM roles** automatically created:
+  - `AWSControlTowerAdmin` — service role for Control Tower operations
+  - `AWSControlTowerCloudTrailRole` — CloudTrail audit log publishing
+  - `AWSControlTowerStackSetRole` — CloudFormation stack set execution
+  - `AWSControlTowerConfigAggregatorRoleForOrganizations` — AWS Config aggregator
+  - Automatic IAM propagation delay to prevent race conditions during landing zone creation
+- **Configurable landing zone features**:
+  - Centralized logging (CloudTrail + S3) with KMS encryption support
+  - AWS Config integration with dedicated account and retention policies
+  - AWS Backup integration with central and admin accounts
+  - AWS Identity Center permission set (`Control-Tower-Administrator`) with full admin access
+  - Centralized root access management via IAM Organizations features
+- **CT.MULTISERVICE.PV.1 OU-level region deny control**:
+  - Automatically applied to Control Tower-managed OUs (Security, Account Factory for Terraform)
+  - Configurable target OUs via `region_deny_target_ou_arns`
+  - Built-in exemptions for billing and global services (bcm-dashboards, bcm-data-exports, bcm-pricing-calculator, pricingplanmanager, uxc)
+  - Extensible exemptions for additional services and principal ARNs
+- **Resource Access Manager (RAM)** organization-level sharing enabled
+- **Output exports**: landing zone ARN, version, drift status, organization details, Identity Center instance ARN
+
+### Changed
+
+### Fixed
+
+### Removed
+
+
 # Changelog
 
 ## [v1.0] - 2026-07-03
