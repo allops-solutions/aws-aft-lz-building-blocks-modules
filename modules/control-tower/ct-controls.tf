@@ -77,9 +77,12 @@ resource "aws_controltower_control" "region_deny" {
     }
   }
 
+  # Controls can only be enabled after the landing zone exists.
+  depends_on = [aws_controltower_landing_zone.this]
+
   timeouts {
-    create = "61m"
-    update = "61m"
-    delete = "61m"
+    create = "60m"
+    update = "60m"
+    delete = "60m"
   }
 }
