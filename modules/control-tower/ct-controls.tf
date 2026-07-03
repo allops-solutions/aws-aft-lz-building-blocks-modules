@@ -26,6 +26,7 @@ locals {
     "bcm-data-exports:*",
     "bcm-pricing-calculator:*",
     "pricingplanmanager:*",
+    "uxc:*",
   ]
 
   # Merge built-in + caller-provided extra exemptions

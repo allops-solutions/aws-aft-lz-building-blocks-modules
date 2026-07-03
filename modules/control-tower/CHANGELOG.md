@@ -1,5 +1,36 @@
 # Changelog
 
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0] - 2026-07-03
+
+### Added
+
+- Initial release of the control-tower module
+- AWS Control Tower landing zone deployment with full manifest-based configuration
+- Support for centralized logging (CloudTrail + S3 with configurable retention)
+- Support for AWS Backup integration with central vault and admin account configuration
+- Support for AWS Config integration with logging bucket configuration
+- IAM Identity Center permission set creation (Control-Tower-Administrator) when access management is enabled
+- Centralized root access management via IAM Identity Center (RootCredentialsManagement and RootSessions)
+- Resource Access Manager (RAM) sharing with AWS Organizations
+- OU-level region deny control (CT.MULTISERVICE.PV.1) with:
+  - Automatic detection and targeting of Control Tower-managed OUs (Security, Account Factory for Terraform)
+  - Support for caller-provided target OUs
+  - Built-in exemptions for global/billing services (BCM Dashboards, BCM Data Exports, BCM Pricing Calculator, Pricing Plan Manager, UXC)
+  - Configurable extra exemptions for service-specific needs (e.g., Bedrock cross-region inference)
+  - Optional principal-level exemptions for automation roles
+  - OU-level exclusion capability for temporary exemptions
+- Drift remediation via INHERITANCE_DRIFT for automatic account enrollment
+- Full support for landing zone versions via configurable version parameter
+- Outputs for landing zone ARN, version, drift status, organization details, and Identity Center instance ARN
+
+
 ## [v1.0] - 2026-07-03
 
 ### Added
