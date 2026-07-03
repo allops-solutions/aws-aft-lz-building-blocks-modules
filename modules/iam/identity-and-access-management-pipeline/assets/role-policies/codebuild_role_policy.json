@@ -1,0 +1,110 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "organizations:Describe*",
+        "organizations:List*",
+        "logs:DescribeLogGroups",
+        "ec2:DescribeAvailabilityZones",
+        "ec2:DescribeDhcpOptions",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeVpcs"
+      ],
+      "Resource": [
+        "*"
+      ],
+      "Effect": "Allow"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "kms:DescribeKey"
+      ],
+      "Resource": [
+        "arn:aws:kms:${region}:${account_id}:key/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "kms:Encrypt*",
+        "kms:Decrypt*",
+        "kms:ReEncrypt*",
+        "kms:GenerateDataKey*"
+      ],
+      "Resource": [
+        "arn:aws:kms:${region}:${account_id}:key/*"
+      ],
+      "Condition": {
+        "ForAnyValue:StringLike": {
+          "kms:ResourceAliases": "alias/${solution_name}*"
+        }
+      }
+    },
+    {
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::${account_id}:role/${solution_name}*"
+      ],
+      "Effect": "Allow"
+    },
+    {
+      "Action": [
+        "logs:*"
+      ],
+      "Resource": "arn:aws:logs:${region}:${account_id}:log-group:/aws/codebuild/${solution_name}*",
+      "Effect": "Allow"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:GetObjectVersion",
+        "s3:GetBucketVersioning",
+        "s3:GetBucketAcl",
+        "s3:GetBucketLocation",
+        "s3:List*",
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "${pipeline_bucket_arn}",
+        "${pipeline_bucket_arn}/*",
+        "${tf_backend_bucket_arn}",
+        "${tf_backend_bucket_arn}/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateNetworkInterface",
+        "ec2:DeleteNetworkInterface"
+      ],
+      "Resource": "arn:aws:ec2:${region}:${account_id}:*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:CreateNetworkInterfacePermission"
+      ],
+      "Resource": "arn:aws:ec2:${region}:${account_id}:network-interface/*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:AuthorizedService": "codebuild.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "codestar-connections:UseConnection"
+      ],
+      "Resource": "arn:aws:codeconnections:${region}:${account_id}:connection/*"
+    }
+  ]
+}

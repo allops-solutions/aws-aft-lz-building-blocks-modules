@@ -1,0 +1,32 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - |
+        set -e
+        DEFAULT_PATH=$(pwd)
+        export TF_LOG=INFO
+
+      - |
+        echo "Terraform installation..."
+        cd /tmp
+        curl -q -o terraform_${TERRAFORM_VERSION}_linux_arm64.zip https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_arm64.zip
+        unzip -q -o terraform_${TERRAFORM_VERSION}_linux_arm64.zip
+        mv terraform /usr/bin
+        terraform -no-color --version
+        cd $DEFAULT_PATH
+
+      - |
+        echo "Terraform init (re-initialize from plan artifact)..."
+        terraform init
+
+  build:
+    commands:
+      - |
+        echo "Terraform apply..."
+        if [ $GIT_BRANCH == $BRANCH_NAME ]; then
+            terraform apply -parallelism=20 "output.tfplan"
+        else
+            echo "Skipping apply - branch $GIT_BRANCH does not match $BRANCH_NAME"
+        fi

@@ -1,0 +1,37 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "identitystore:List*",
+        "identitystore:Get*",
+        "identitystore:Describe*",
+        "sso:List*",
+        "sso:Get*",
+        "sso:Describe*",
+        "sso:AttachManagedPolicyToPermissionSet",
+        "sso:DeletePermissionsPolicy",
+        "sso:DeleteInlinePolicyToPermissionSet",
+        "sso:DescribePermissionSet",
+        "sso:PutPermissionsPolicy",
+        "sso:PutInlinePolicyToPermissionSet",
+        "sso:ProvisionPermissionSet",
+        "sso:CreatePermissionSet",
+        "sso:UpdatePermissionSet",
+        "sso:DeletePermissionSet",
+        "sso:TagResource",
+        "sso:DetachManagedPolicyFromPermissionSet",
+        "sso:DeleteInlinePolicyFromPermissionSet",
+        "sso:AttachCustomerManagedPolicyReferenceToPermissionSet",
+        "sso:DeletePermissionsBoundaryFromPermissionSet",
+        "sso:PutPermissionsBoundaryToPermissionSet",
+        "sso:DetachCustomerManagedPolicyReferenceFromPermissionSet",
+        "sso:DescribePermissionSet",
+        "sso:CreateAccountAssignment",
+        "sso:DeleteAccountAssignment"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

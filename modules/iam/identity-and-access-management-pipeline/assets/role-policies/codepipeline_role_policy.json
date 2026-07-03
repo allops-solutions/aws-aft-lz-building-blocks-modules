@@ -1,0 +1,135 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt",
+        "kms:GenerateDataKey"
+      ],
+      "Resource": [
+        "arn:aws:kms:${region}:${account_id}:key/*"
+      ],
+      "Condition": {
+        "ForAnyValue:StringLike": {
+          "kms:ResourceAliases": "alias/${solution_name}*"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+        "s3:GetBucketVersioning",
+        "s3:List*",
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "${pipeline_bucket_arn}",
+        "${pipeline_bucket_arn}/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "codebuild:BatchGetBuilds",
+        "codebuild:StartBuild"
+      ],
+      "Resource": "arn:aws:codebuild:${region}:${account_id}:project/${solution_name}-*"
+    },
+    {
+      "Action": [
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfiles",
+        "iam:ListRoles"
+      ],
+      "Resource": "*",
+      "Effect": "Allow"
+    },
+    {
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:DescribeLogGroups",
+        "logs:FilterLogEvents"
+      ],
+      "Resource": "arn:aws:logs:${region}:${account_id}:*",
+      "Effect": "Allow"
+    },
+    {
+      "Action": "iam:PassRole",
+      "Effect": "Allow",
+      "Resource": [
+        "*"
+      ],
+      "Condition": {
+        "StringLike": {
+          "iam:PassedToService": "ecs-tasks.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Action": "iam:PassRole",
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:iam::*:role/ecsInstanceRole*"
+      ],
+      "Condition": {
+        "StringLike": {
+          "iam:PassedToService": [
+            "ec2.amazonaws.com",
+            "ec2.amazonaws.com.cn"
+          ]
+        }
+      }
+    },
+    {
+      "Action": "iam:PassRole",
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:iam::*:role/ecsAutoscaleRole*"
+      ],
+      "Condition": {
+        "StringLike": {
+          "iam:PassedToService": [
+            "application-autoscaling.amazonaws.com",
+            "application-autoscaling.amazonaws.com.cn"
+          ]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "iam:AWSServiceName": [
+            "ecs.amazonaws.com",
+            "spot.amazonaws.com",
+            "spotfleet.amazonaws.com"
+          ]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "codecommit:GitPull",
+        "codecommit:Get*",
+        "codecommit:List*",
+        "codecommit:Describe*",
+        "codecommit:BatchGet*",
+        "codecommit:UploadArchive"
+      ],
+      "Resource": "arn:aws:codecommit:${region}:${account_id}:*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "codestar-connections:UseConnection"
+      ],
+      "Resource": "arn:aws:codeconnections:${region}:${account_id}:connection/*"
+    }
+  ]
+}

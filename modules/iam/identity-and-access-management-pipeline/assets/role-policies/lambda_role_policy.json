@@ -1,0 +1,27 @@
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Action": [
+				"logs:CreateLogGroup"
+			],
+			"Effect": "Allow",
+			"Resource": "arn:aws:logs:${region}:${account_id}:log-group:*"
+		},
+		{
+			"Action": [
+				"logs:CreateLogStream",
+				"logs:PutLogEvents"
+			],
+			"Effect": "Allow",
+			"Resource": "arn:aws:logs:${region}:${account_id}:log-group:*:log-stream:*"
+		},
+		{
+			"Action": [
+				"events:PutEvents"
+			],
+			"Effect": "Allow",
+			"Resource": "${event_bus_arn}"
+		}
+	]
+}
