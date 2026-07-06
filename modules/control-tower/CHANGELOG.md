@@ -1,5 +1,61 @@
 # Changelog
 
+# Changelog
+
+## [v1.0] - 2026-07-06
+
+### Added
+
+- **AWS Control Tower Landing Zone Management** — Complete Terraform module for provisioning AWS Control Tower landing zones via the `aws_controltower_landing_zone` resource (requires AWS Provider >= 6.0.0).
+
+- **Prerequisite IAM Roles** — Automatic creation of four required Control Tower service roles:
+  - `AWSControlTowerAdmin` — Used by Control Tower to set up and manage the landing zone
+  - `AWSControlTowerCloudTrailRole` — Assumed by CloudTrail for audit logging
+  - `AWSControlTowerStackSetRole` — Assumed by CloudFormation for stack set deployments
+  - `AWSControlTowerConfigAggregatorRoleForOrganizations` — Assumed by AWS Config for org-level aggregation
+
+- **IAM Propagation Handling** — Built-in 10-second delay to allow IAM roles and policies to propagate globally before Control Tower creation, preventing race conditions.
+
+- **Landing Zone Configuration** — Flexible manifest building supporting:
+  - Governed regions
+  - Centralized logging (CloudTrail + S3 retention)
+  - AWS Backup integration (central backup and admin accounts)
+  - AWS Config integration (with optional KMS encryption)
+  - Security roles and audit account integration
+  - Access management via IAM Identity Center
+
+- **IAM Identity Center Permission Set** — Automatic provisioning of `Control-Tower-Administrator` permission set with AdministratorAccess policy when access management is enabled.
+
+- **OU-Level Region Deny Control (CT.MULTISERVICE.PV.1)** — Configurable region restriction control with:
+  - Automatic discovery of Control Tower-managed OUs (Security, Account Factory for Terraform)
+  - Support for caller-provided OU targets
+  - Built-in exemptions for global/billing services (bcm-dashboards, bcm-data-exports, bcm-pricing-calculator, pricingplanmanager, uxc)
+  - Extensible exemptions for additional services and principals
+  - Per-OU exclusion capability for temporary exemptions
+
+- **Centralized Root Access Management** — Integration with IAM Organizations for centralized root credential and session management.
+
+- **AWS RAM Integration** — Automatic enablement of AWS Resource Access Manager sharing with AWS Organizations.
+
+- **Landing Zone Outputs** — Exports including:
+  - Landing zone ARN and version
+  - Drift status
+  - Identity Center instance ARN
+  - Organization root ID and organization ID
+
+### Changed
+
+- N/A (initial release)
+
+### Fixed
+
+- N/A (initial release)
+
+### Removed
+
+- N/A (initial release)
+
+
 ## [v1.0] - 2026-07-03
 
 ### Added
