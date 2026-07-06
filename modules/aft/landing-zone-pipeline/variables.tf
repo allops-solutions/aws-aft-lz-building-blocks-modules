@@ -14,8 +14,9 @@ variable "aft_management_account_id" {
 }
 
 variable "github_username" {
-  description = "GitHub organization or username that owns the landing zone repo."
+  description = "GitHub organization or username that owns the landing zone repo. Read from SSM if not provided."
   type        = string
+  default     = ""
 }
 
 variable "customer_name" {

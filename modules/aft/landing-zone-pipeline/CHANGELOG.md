@@ -1,5 +1,26 @@
 # Changelog
 
+## [v1.0] - 2026-07-06
+
+### Added
+
+- Initial release of the `aft/landing-zone-pipeline` module
+- CodePipeline V2 for automated Control Tower and AFT infrastructure management
+- Dual VCS provider support: GitHub (via CodeStarSourceConnection) and AWS CodeCommit
+- Configurable pipeline modes:
+  - Manual approval mode: Source → Plan → Manual Approval → Apply
+  - Automated mode: Source → Apply (combined plan+apply in single CodeBuild run)
+- Cross-account Terraform execution via assumed role in Control Tower management account
+- EventBridge integration for CodeCommit repository triggers
+- CloudWatch logging for CodeBuild plan and apply phases
+- S3 artifact storage with automatic lifecycle management (14-day retention)
+- Versioned Terraform state bucket configuration with optional defaults
+- VCS configuration auto-detection from AFT SSM parameters
+- Configurable pipeline auto-triggering (can be disabled for manual execution)
+- Customizable buildspec references via local file data sources
+- Tagging support for all provisioned resources
+
+
 ## [v1.0] - 2026-07-03
 
 ### Added

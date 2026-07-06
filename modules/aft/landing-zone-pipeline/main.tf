@@ -11,24 +11,56 @@
 #
 # Layout (when enable_manual_approval = false):
 #   Source -> Apply (combined plan + apply in one CodeBuild run)
+#
+# VCS provider is auto-detected from SSM (/aft/config/vcs/provider).
+# Supports both GitHub (CodeStarSourceConnection) and CodeCommit.
+###############################################################################
+
+###############################################################################
+# SSM Data Sources — VCS configuration published by AFT
+###############################################################################
+
+data "aws_ssm_parameter" "vcs_provider" {
+  name = "/aft/config/vcs/provider"
+}
+
+data "aws_ssm_parameter" "codeconnections_arn" {
+  count = local.is_codecommit ? 0 : 1
+  name  = "/aft/config/vcs/codeconnections-connection-arn"
+}
+
+###############################################################################
+# Locals
 ###############################################################################
 
 locals {
+  # VCS provider detection from SSM
+  vcs_provider  = lower(trimspace(data.aws_ssm_parameter.vcs_provider.value))
+  is_codecommit = local.vcs_provider == "codecommit"
+
+  # GitHub org — use variable if provided, otherwise the customer_name prefix handles it
+  github_username = var.github_username
+
   solution_name         = "custom-aft-landing-zone"
-  full_repo_id          = "${var.github_username}/${var.customer_name}-aft-control-tower-account-setup"
+  repo_name             = "${var.customer_name}-aft-control-tower-account-setup"
+  full_repo_id          = "${local.github_username}/${local.repo_name}"
   branch_name           = "main"
   terraform_version     = "1.15.0"
   tf_state_bucket       = var.tf_state_bucket != "" ? var.tf_state_bucket : "terraform-state-terraform-account-factory-${var.ct_management_account_id}"
   tf_state_key          = var.tf_state_key != "" ? var.tf_state_key : "${local.solution_name}/terraform.tfstate"
   ct_execution_role_arn = "arn:aws:iam::${var.ct_management_account_id}:role/${var.ct_management_role_name}"
+
+  # CodeConnections ARN — only available for GitHub
+  codeconnections_arn = local.is_codecommit ? null : data.aws_ssm_parameter.codeconnections_arn[0].value
 }
 
 ###############################################################################
-# CodeConnections — reuse the existing connection from AFT (stored in SSM)
+# CodeCommit repository data source (only when vcs_provider = codecommit)
 ###############################################################################
 
-data "aws_ssm_parameter" "codeconnections_arn" {
-  name = "/aft/config/vcs/codeconnections-connection-arn"
+data "aws_codecommit_repository" "this" {
+  count           = local.is_codecommit ? 1 : 0
+  repository_name = local.repo_name
 }
 
 ###############################################################################
@@ -288,38 +320,57 @@ resource "aws_iam_role_policy" "pipeline" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = "codestar-connections:UseConnection"
-        Resource = data.aws_ssm_parameter.codeconnections_arn.value
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "codebuild:BatchGetBuilds",
-          "codebuild:StartBuild"
-        ]
-        Resource = compact([
-          aws_codebuild_project.apply.arn,
-          var.enable_manual_approval ? aws_codebuild_project.plan[0].arn : null
-        ])
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:GetObjectVersion",
-          "s3:PutObject",
-          "s3:GetBucketVersioning",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.artifacts.arn,
-          "${aws_s3_bucket.artifacts.arn}/*"
-        ]
-      }
-    ]
+    Statement = concat(
+      # CodeConnections permission — only for GitHub
+      local.is_codecommit ? [] : [
+        {
+          Effect   = "Allow"
+          Action   = "codestar-connections:UseConnection"
+          Resource = local.codeconnections_arn
+        }
+      ],
+      # CodeCommit permissions — only for CodeCommit
+      local.is_codecommit ? [
+        {
+          Effect = "Allow"
+          Action = [
+            "codecommit:GetBranch",
+            "codecommit:GetCommit",
+            "codecommit:UploadArchive",
+            "codecommit:GetUploadArchiveStatus",
+            "codecommit:CancelUploadArchive"
+          ]
+          Resource = data.aws_codecommit_repository.this[0].arn
+        }
+      ] : [],
+      [
+        {
+          Effect = "Allow"
+          Action = [
+            "codebuild:BatchGetBuilds",
+            "codebuild:StartBuild"
+          ]
+          Resource = compact([
+            aws_codebuild_project.apply.arn,
+            var.enable_manual_approval ? aws_codebuild_project.plan[0].arn : null
+          ])
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:GetObjectVersion",
+            "s3:PutObject",
+            "s3:GetBucketVersioning",
+            "s3:ListBucket"
+          ]
+          Resource = [
+            aws_s3_bucket.artifacts.arn,
+            "${aws_s3_bucket.artifacts.arn}/*"
+          ]
+        }
+      ]
+    )
   })
 }
 
@@ -338,8 +389,9 @@ resource "aws_codepipeline" "this" {
     type     = "S3"
   }
 
+  # Trigger for GitHub (V2 pipelines require explicit triggers)
   dynamic "trigger" {
-    for_each = var.enable_pipeline_trigger ? [1] : []
+    for_each = !local.is_codecommit && var.enable_pipeline_trigger ? [1] : []
     content {
       provider_type = "CodeStarSourceConnection"
 
@@ -362,13 +414,18 @@ resource "aws_codepipeline" "this" {
       name             = "source"
       category         = "Source"
       owner            = "AWS"
-      provider         = "CodeStarSourceConnection"
+      provider         = local.is_codecommit ? "CodeCommit" : "CodeStarSourceConnection"
       version          = "1"
       output_artifacts = ["source_output"]
       namespace        = "SourceVariables"
 
-      configuration = {
-        ConnectionArn        = data.aws_ssm_parameter.codeconnections_arn.value
+      configuration = local.is_codecommit ? {
+        RepositoryName       = local.repo_name
+        BranchName           = local.branch_name
+        PollForSourceChanges = false
+        OutputArtifactFormat = "CODE_ZIP"
+      } : {
+        ConnectionArn        = local.codeconnections_arn
         FullRepositoryId     = local.full_repo_id
         BranchName           = local.branch_name
         DetectChanges        = false
@@ -451,6 +508,75 @@ resource "aws_codepipeline" "this" {
   }
 
   tags = var.tags
+}
+
+###############################################################################
+# EventBridge trigger for CodeCommit (replaces the V2 trigger block)
+###############################################################################
+
+resource "aws_cloudwatch_event_rule" "codecommit_trigger" {
+  count = local.is_codecommit && var.enable_pipeline_trigger ? 1 : 0
+
+  name        = "${local.solution_name}-${local.branch_name}-trigger"
+  description = "Trigger pipeline on push to ${local.branch_name}"
+
+  event_pattern = jsonencode({
+    source      = ["aws.codecommit"]
+    detail-type = ["CodeCommit Repository State Change"]
+    resources   = [data.aws_codecommit_repository.this[0].arn]
+    detail = {
+      event         = ["referenceCreated", "referenceUpdated"]
+      referenceType = ["branch"]
+      referenceName = [local.branch_name]
+    }
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role" "events" {
+  count = local.is_codecommit && var.enable_pipeline_trigger ? 1 : 0
+
+  name = "${local.solution_name}-events"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "events.amazonaws.com" }
+        Action    = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy" "events" {
+  count = local.is_codecommit && var.enable_pipeline_trigger ? 1 : 0
+
+  name = "${local.solution_name}-events"
+  role = aws_iam_role.events[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "codepipeline:StartPipelineExecution"
+        Resource = aws_codepipeline.this.arn
+      }
+    ]
+  })
+}
+
+resource "aws_cloudwatch_event_target" "codecommit_trigger" {
+  count = local.is_codecommit && var.enable_pipeline_trigger ? 1 : 0
+
+  rule     = aws_cloudwatch_event_rule.codecommit_trigger[0].name
+  role_arn = aws_iam_role.events[0].arn
+  arn      = aws_codepipeline.this.arn
 }
 
 ###############################################################################
