@@ -1,35 +1,23 @@
 # AFT Customization Trigger Module
 
-A Terraform module that provisions an automated CI/CD pipeline for AWS Account Factory for Terraform (AFT) account customizations. The module creates a CodePipeline V2 that monitors your global and account-specific customization repositories and automatically triggers the AFT customization step function on code changes.
+Automatically trigger Account Factory for Terraform (AFT) customizations on repository pushes.
 
-## Features
+## Overview
 
-- **Automated Triggering**: Watches global-customizations and account-customizations repositories for changes on the main branch
-- **Event-Driven Architecture**: Uses CodePipeline V2 with native Git push triggers (no polling required)
-- **Step Function Integration**: Automatically invokes `aft-invoke-customizations` with full scope customizations
-- **Additive Design**: Extends AFT without modifying any existing AFT resources or configurations
-- **IAM Least Privilege**: Narrow, role-specific IAM policies for CodePipeline and CodeBuild
-- **Artifact Management**: Includes S3 bucket with automatic lifecycle expiration (1 day)
-- **GitHub Integration**: Works with GitHub repositories via CodeStar Connections
+This module creates a CodePipeline V2 that watches the global-customizations and account-customizations repositories for pushes and automatically invokes the `aft-invoke-customizations` Step Function. The pipeline supports both GitHub (via CodeStarSourceConnection) and CodeCommit as source repositories.
 
-## Requirements
-
-- **Terraform**: >= 1.5.0
-- **AWS Provider**: >= 6.0.0
-- AWS Control Tower with Account Factory for Terraform enabled
-- CodeConnections configured in the AFT management account (created by the AFT module)
-- Customization repositories available on GitHub with `main` branch
+The module automatically detects the VCS provider from AFT's SSM configuration and configures the appropriate source control integration. It runs in the AFT management account and is fully additive—it does not modify any existing AFT resources.
 
 ## Usage
 
 ```hcl
-module "aft_customization_trigger" {
-  source = "path/to/modules/aft/customization-trigger"
+module "customization_trigger" {
+  source = "./modules/aft/customization-trigger"
 
-  ct_home_region              = "us-east-1"
-  aft_management_account_id   = "123456789012"
-  github_username             = "my-organization"
-  customer_name               = "acme"
+  ct_home_region             = "us-east-1"
+  aft_management_account_id  = "123456789012"
+  customer_name              = "acme"
+  github_username            = "acme-org"  # Required only for GitHub
 
   tags = {
     "product"    = "aft"
@@ -39,51 +27,66 @@ module "aft_customization_trigger" {
 }
 ```
 
-## How It Works
+## Requirements
 
-1. **Repository Monitoring**: The pipeline monitors two repositories:
-   - `{github_username}/{customer_name}-aft-global-customizations`
-   - `{github_username}/{customer_name}-aft-account-customizations`
-
-2. **Trigger**: When code is pushed to the `main` branch of either repository, CodePipeline automatically starts execution
-
-3. **Build Stage**: CodeBuild retrieves the source code and executes a build that invokes the Step Function
-
-4. **Customization Execution**: The `aft-invoke-customizations` Step Function is triggered with `{"include": [{"type": "all"}]}`, applying all configured customizations
+| Requirement | Version |
+|-------------|---------|
+| Terraform  | >= 1.5.0 |
+| AWS Provider | >= 6.0.0 |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| `ct_home_region` | Control Tower home region where the AFT Step Function is deployed | `string` | N/A | yes |
-| `aft_management_account_id` | AWS account ID of the AFT management account (where the Step Function lives) | `string` | N/A | yes |
-| `github_username` | GitHub organization or username that owns the AFT repositories | `string` | N/A | yes |
-| `customer_name` | Customer/project name prefix used in AFT repository names (e.g., `acme` for `acme-aft-account-customizations`) | `string` | N/A | yes |
-| `tags` | Tags to apply to all resources created by this module | `map(string)` | `{"product" = "aft", "created-by" = "AFT"}` | no |
+| `ct_home_region` | Control Tower home region. | `string` | — | yes |
+| `aft_management_account_id` | The AWS account ID of the AFT management account where the Step Function lives. | `string` | — | yes |
+| `customer_name` | Customer/project name prefix for AFT repo names. Used to construct repository names as `{customer_name}-aft-global-customizations` and `{customer_name}-aft-account-customizations`. | `string` | — | yes |
+| `github_username` | GitHub organization or username that owns the AFT repos. Only used when VCS provider is GitHub. | `string` | `""` | no |
+| `tags` | Tags to apply to all resources. | `map(string)` | `{ "product" = "aft", "created-by" = "AFT" }` | no |
 
 ## Outputs
 
-This module does not expose any outputs. Resources are managed internally and trigger the AFT Step Function through the CodePipeline automation.
+This module does not declare any outputs.
 
-## Resources Created
+## Details
 
-| Resource Type | Name | Purpose |
-|---|---|---|
-| `aws_codepipeline` | `custom-aft-customization-trigger` | V2 pipeline that watches repositories and orchestrates the build stage |
-| `aws_codebuild_project` | `custom-aft-customization-trigger` | Build job that invokes the Step Function |
-| `aws_iam_role` | `custom-aft-customization-trigger-pipeline` | IAM role for CodePipeline |
-| `aws_iam_role` | `custom-aft-customization-trigger-codebuild` | IAM role for CodeBuild |
-| `aws_s3_bucket` | `custom-aft-customization-trigger-*` | Artifact storage for pipeline (auto-expires after 1 day) |
+### VCS Provider Detection
 
-## Notes
+The module automatically detects the VCS provider from the `/aft/config/vcs/provider` SSM parameter (published by AFT). Based on the provider:
 
-- This module runs in the AFT management account using the default AWS provider configuration
-- The module reads the CodeConnections ARN from SSM Parameter Store path `/aft/config/vcs/codeconnections-connection-arn` (created by the AFT module)
-- Pipeline artifacts are automatically cleaned up after 1 day via S3 lifecycle rules
-- All resources are tagged with the provided `tags` variable for easy identification and cost allocation
+- **GitHub**: Uses CodeStarSourceConnection for repository access and V2 pipeline triggers
+- **CodeCommit**: Uses CodeCommit source actions and EventBridge rules for push triggers
 
-## Integration with AFT
+### Resources Created
 
-This module is designed as an extension to the official AWS Account Factory for Terraform module. It does not modify any existing AFT resources and can be added or removed independently.
+- **CodePipeline V2**: Named `custom-aft-customization-trigger`, with Source and Invoke-Customizations stages
+- **CodeBuild Project**: Invokes the `aft-invoke-customizations` Step Function with `{"include": [{"type": "all"}]}`
+- **S3 Bucket**: Stores pipeline artifacts (expires after 1 day)
+- **IAM Roles and Policies**:
+  - CodePipeline role with permissions for source, CodeBuild, and S3
+  - CodeBuild role with permissions to start Step Function executions and write logs
+  - EventBridge role (CodeCommit only) to start pipeline executions
+- **EventBridge Rules** (CodeCommit only): Monitors both customization repositories for pushes to the main branch
 
-For more information about AFT, see the [Hashicorp Account Factory for Terraform Tutorial](https://developer.hashicorp.com/terraform/tutorials/aws/aws-control-tower-aft).
+### Supported Source Repositories
+
+The module monitors two repositories:
+
+1. `{customer_name}-aft-global-customizations` — Global customizations
+2. `{customer_name}-aft-account-customizations` — Account-specific customizations
+
+Pushes to the `main` branch trigger an immediate pipeline execution, which invokes AFT customizations for all accounts.
+
+## Prerequisites
+
+- AFT is deployed and the `aft-invoke-customizations` Step Function exists
+- For GitHub: CodeStarConnection ARN is published at `/aft/config/vcs/codeconnections-connection-arn` in SSM
+- For CodeCommit: Both customization repositories exist in the same account
+- The provider is configured to target the AFT management account
+
+## Architecture Notes
+
+- Pipeline runs in the AFT management account only (uses default provider)
+- This module is fully non-destructive and does not interact with AFT core resources
+- Artifacts are automatically cleaned up via S3 lifecycle policy
+- CodeBuild uses ARM-based Lambda container for cost efficiency

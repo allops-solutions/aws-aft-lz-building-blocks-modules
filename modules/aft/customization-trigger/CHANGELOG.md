@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0] - 2026-07-06
+
+### Added
+- Initial release of the aft/customization-trigger module
+- CodePipeline V2 that automatically triggers customizations on repository pushes
+- Automatic VCS provider detection (GitHub via CodeStarSourceConnection or CodeCommit)
+- Support for both GitHub and CodeCommit source repositories
+- IAM roles and policies for CodePipeline, CodeBuild, and EventBridge
+- S3 bucket for pipeline artifacts with 1-day expiration lifecycle policy
+- CodeBuild project that invokes the aft-invoke-customizations Step Function
+- EventBridge rules for CodeCommit repository push events (main branch only)
+- Dynamic trigger configuration based on VCS provider
+- Tagging support for all created resources
+
+
 ## [1.0] - 2026-07-03
 
 ### Added

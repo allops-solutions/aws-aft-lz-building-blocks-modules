@@ -9,8 +9,9 @@ variable "aft_management_account_id" {
 }
 
 variable "github_username" {
-  description = "GitHub organization or username that owns the AFT repos."
+  description = "GitHub organization or username that owns the AFT repos. Only used when VCS is GitHub."
   type        = string
+  default     = ""
 }
 
 variable "customer_name" {

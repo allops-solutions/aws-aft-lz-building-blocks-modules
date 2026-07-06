@@ -7,15 +7,54 @@
 #
 # Runs in the AFT management account (default provider).
 # This is additive to the AFT module — it does not modify any AFT resources.
+#
+# VCS provider is auto-detected from SSM (/aft/config/vcs/provider).
+# Supports both GitHub (CodeStarSourceConnection) and CodeCommit.
+###############################################################################
+
+###############################################################################
+# SSM Data Sources — VCS configuration published by AFT
+###############################################################################
+
+data "aws_ssm_parameter" "vcs_provider" {
+  name = "/aft/config/vcs/provider"
+}
+
+data "aws_ssm_parameter" "codeconnections_arn" {
+  count = local.is_codecommit ? 0 : 1
+  name  = "/aft/config/vcs/codeconnections-connection-arn"
+}
+
+###############################################################################
+# Locals
 ###############################################################################
 
 locals {
+  # VCS provider detection from SSM
+  vcs_provider  = lower(trimspace(data.aws_ssm_parameter.vcs_provider.value))
+  is_codecommit = local.vcs_provider == "codecommit"
+
   aft_sfn_arn = "arn:aws:states:${var.ct_home_region}:${var.aft_management_account_id}:stateMachine:aft-invoke-customizations"
+
+  repo_name_global  = "${var.customer_name}-aft-global-customizations"
+  repo_name_account = "${var.customer_name}-aft-account-customizations"
+
+  # CodeConnections ARN — only available for GitHub
+  codeconnections_arn = local.is_codecommit ? null : data.aws_ssm_parameter.codeconnections_arn[0].value
 }
 
-# Read the CodeConnections ARN from SSM (created by the AFT module)
-data "aws_ssm_parameter" "codeconnections_arn" {
-  name = "/aft/config/vcs/codeconnections-connection-arn"
+###############################################################################
+# CodeCommit repository data sources (only when vcs_provider = codecommit)
+###############################################################################
+
+data "aws_codecommit_repository" "global" {
+  count           = local.is_codecommit ? 1 : 0
+  repository_name = local.repo_name_global
+}
+
+data "aws_codecommit_repository" "account" {
+  count           = local.is_codecommit ? 1 : 0
+  repository_name = local.repo_name_account
 }
 
 ###############################################################################
@@ -146,33 +185,55 @@ resource "aws_iam_role_policy" "pipeline" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Effect   = "Allow"
-        Action   = "codestar-connections:UseConnection"
-        Resource = data.aws_ssm_parameter.codeconnections_arn.value
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "codebuild:BatchGetBuilds",
-          "codebuild:StartBuild"
-        ]
-        Resource = aws_codebuild_project.this.arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:GetBucketVersioning"
-        ]
-        Resource = [
-          aws_s3_bucket.artifacts.arn,
-          "${aws_s3_bucket.artifacts.arn}/*"
-        ]
-      }
-    ]
+    Statement = concat(
+      # CodeConnections permission — only for GitHub
+      local.is_codecommit ? [] : [
+        {
+          Effect   = "Allow"
+          Action   = "codestar-connections:UseConnection"
+          Resource = local.codeconnections_arn
+        }
+      ],
+      # CodeCommit permissions — only for CodeCommit
+      local.is_codecommit ? [
+        {
+          Effect = "Allow"
+          Action = [
+            "codecommit:GetBranch",
+            "codecommit:GetCommit",
+            "codecommit:UploadArchive",
+            "codecommit:GetUploadArchiveStatus",
+            "codecommit:CancelUploadArchive"
+          ]
+          Resource = [
+            data.aws_codecommit_repository.global[0].arn,
+            data.aws_codecommit_repository.account[0].arn
+          ]
+        }
+      ] : [],
+      [
+        {
+          Effect = "Allow"
+          Action = [
+            "codebuild:BatchGetBuilds",
+            "codebuild:StartBuild"
+          ]
+          Resource = aws_codebuild_project.this.arn
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:GetBucketVersioning"
+          ]
+          Resource = [
+            aws_s3_bucket.artifacts.arn,
+            "${aws_s3_bucket.artifacts.arn}/*"
+          ]
+        }
+      ]
+    )
   })
 }
 
@@ -214,29 +275,36 @@ resource "aws_codepipeline" "this" {
     type     = "S3"
   }
 
-  trigger {
-    provider_type = "CodeStarSourceConnection"
+  # Triggers for GitHub (V2 pipelines require explicit triggers)
+  dynamic "trigger" {
+    for_each = local.is_codecommit ? [] : [1]
+    content {
+      provider_type = "CodeStarSourceConnection"
 
-    git_configuration {
-      source_action_name = "aft-global-customizations"
+      git_configuration {
+        source_action_name = "aft-global-customizations"
 
-      push {
-        branches {
-          includes = ["main"]
+        push {
+          branches {
+            includes = ["main"]
+          }
         }
       }
     }
   }
 
-  trigger {
-    provider_type = "CodeStarSourceConnection"
+  dynamic "trigger" {
+    for_each = local.is_codecommit ? [] : [1]
+    content {
+      provider_type = "CodeStarSourceConnection"
 
-    git_configuration {
-      source_action_name = "aft-account-customizations"
+      git_configuration {
+        source_action_name = "aft-account-customizations"
 
-      push {
-        branches {
-          includes = ["main"]
+        push {
+          branches {
+            includes = ["main"]
+          }
         }
       }
     }
@@ -249,13 +317,18 @@ resource "aws_codepipeline" "this" {
       name             = "aft-global-customizations"
       category         = "Source"
       owner            = "AWS"
-      provider         = "CodeStarSourceConnection"
+      provider         = local.is_codecommit ? "CodeCommit" : "CodeStarSourceConnection"
       version          = "1"
       output_artifacts = ["source_global"]
 
-      configuration = {
-        ConnectionArn        = data.aws_ssm_parameter.codeconnections_arn.value
-        FullRepositoryId     = "${var.github_username}/${var.customer_name}-aft-global-customizations"
+      configuration = local.is_codecommit ? {
+        RepositoryName       = local.repo_name_global
+        BranchName           = "main"
+        PollForSourceChanges = false
+        OutputArtifactFormat = "CODE_ZIP"
+      } : {
+        ConnectionArn        = local.codeconnections_arn
+        FullRepositoryId     = "${var.github_username}/${local.repo_name_global}"
         BranchName           = "main"
         DetectChanges        = false
         OutputArtifactFormat = "CODE_ZIP"
@@ -266,13 +339,18 @@ resource "aws_codepipeline" "this" {
       name             = "aft-account-customizations"
       category         = "Source"
       owner            = "AWS"
-      provider         = "CodeStarSourceConnection"
+      provider         = local.is_codecommit ? "CodeCommit" : "CodeStarSourceConnection"
       version          = "1"
       output_artifacts = ["source_account"]
 
-      configuration = {
-        ConnectionArn        = data.aws_ssm_parameter.codeconnections_arn.value
-        FullRepositoryId     = "${var.github_username}/${var.customer_name}-aft-account-customizations"
+      configuration = local.is_codecommit ? {
+        RepositoryName       = local.repo_name_account
+        BranchName           = "main"
+        PollForSourceChanges = false
+        OutputArtifactFormat = "CODE_ZIP"
+      } : {
+        ConnectionArn        = local.codeconnections_arn
+        FullRepositoryId     = "${var.github_username}/${local.repo_name_account}"
         BranchName           = "main"
         DetectChanges        = false
         OutputArtifactFormat = "CODE_ZIP"
@@ -298,4 +376,101 @@ resource "aws_codepipeline" "this" {
   }
 
   tags = var.tags
+}
+
+###############################################################################
+# EventBridge triggers for CodeCommit (replaces V2 trigger blocks)
+###############################################################################
+
+resource "aws_iam_role" "events" {
+  count = local.is_codecommit ? 1 : 0
+
+  name = "custom-aft-customization-trigger-events"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect    = "Allow"
+        Principal = { Service = "events.amazonaws.com" }
+        Action    = "sts:AssumeRole"
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy" "events" {
+  count = local.is_codecommit ? 1 : 0
+
+  name = "custom-aft-customization-trigger-events"
+  role = aws_iam_role.events[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = "codepipeline:StartPipelineExecution"
+        Resource = aws_codepipeline.this.arn
+      }
+    ]
+  })
+}
+
+resource "aws_cloudwatch_event_rule" "global_customizations" {
+  count = local.is_codecommit ? 1 : 0
+
+  name        = "custom-aft-trigger-global-customizations"
+  description = "Trigger customization pipeline on push to global-customizations"
+
+  event_pattern = jsonencode({
+    source      = ["aws.codecommit"]
+    detail-type = ["CodeCommit Repository State Change"]
+    resources   = [data.aws_codecommit_repository.global[0].arn]
+    detail = {
+      event         = ["referenceCreated", "referenceUpdated"]
+      referenceType = ["branch"]
+      referenceName = ["main"]
+    }
+  })
+
+  tags = var.tags
+}
+
+resource "aws_cloudwatch_event_target" "global_customizations" {
+  count = local.is_codecommit ? 1 : 0
+
+  rule     = aws_cloudwatch_event_rule.global_customizations[0].name
+  role_arn = aws_iam_role.events[0].arn
+  arn      = aws_codepipeline.this.arn
+}
+
+resource "aws_cloudwatch_event_rule" "account_customizations" {
+  count = local.is_codecommit ? 1 : 0
+
+  name        = "custom-aft-trigger-account-customizations"
+  description = "Trigger customization pipeline on push to account-customizations"
+
+  event_pattern = jsonencode({
+    source      = ["aws.codecommit"]
+    detail-type = ["CodeCommit Repository State Change"]
+    resources   = [data.aws_codecommit_repository.account[0].arn]
+    detail = {
+      event         = ["referenceCreated", "referenceUpdated"]
+      referenceType = ["branch"]
+      referenceName = ["main"]
+    }
+  })
+
+  tags = var.tags
+}
+
+resource "aws_cloudwatch_event_target" "account_customizations" {
+  count = local.is_codecommit ? 1 : 0
+
+  rule     = aws_cloudwatch_event_rule.account_customizations[0].name
+  role_arn = aws_iam_role.events[0].arn
+  arn      = aws_codepipeline.this.arn
 }
