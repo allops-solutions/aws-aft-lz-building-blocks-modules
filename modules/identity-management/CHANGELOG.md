@@ -1,5 +1,19 @@
 # Changelog
 
+## [v1.0] - 2026-07-07
+
+### Added
+
+- Initial release of the identity-management module.
+- Permission set management with support for AWS managed policies and inline policies.
+- Flexible assignment system supporting both bulk group assignments and individual one-off grants.
+- OU-level targeting with automatic expansion to member accounts.
+- Protected account filtering to prevent assignments to sensitive accounts (e.g., management account, partner customer-access accounts).
+- Automatic deduplication of overlapping assignments (same user, permission set, and account via different paths).
+- Identity Store user lookup and validation.
+- Two module outputs: `permission_sets` (map of ARNs) and `assignment_count` (total assignments created).
+
+
 ## [v1.0] - 2026-07-06
 
 ### Added
