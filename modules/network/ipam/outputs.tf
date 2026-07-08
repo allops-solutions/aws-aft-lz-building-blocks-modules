@@ -37,7 +37,7 @@ output "environment_pool_arns" {
   value       = { for k, v in aws_vpc_ipam_pool.environment : k => v.arn }
 }
 
-output "ram_resource_share_arn" {
-  description = "RAM resource share ARN (null if sharing disabled)."
-  value       = var.share_with_organization ? aws_ram_resource_share.ipam_pools[0].arn : null
+output "ram_resource_share_arns" {
+  description = "Map of environment pool name to its RAM resource share ARN (empty if sharing disabled)."
+  value       = { for k, v in aws_ram_resource_share.ipam_pools : k => v.arn }
 }

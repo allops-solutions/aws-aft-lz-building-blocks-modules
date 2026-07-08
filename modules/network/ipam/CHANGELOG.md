@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0] - 2026-07-08
+
+### Added
+
+- Initial release of the VPC IPAM module
+- Hierarchical IPAM pool structure with organization-level, regional, and environment-level pools
+- Automatic IPAM instance creation with configurable operating regions
+- Regional pool support with capacity planning for multiple environment pools (prod/nonprod/shared)
+- Environment pools configured with customizable allocation netmask lengths (default/min/max)
+- Organization-wide IPAM delegation to the Network account for centralized CIDR management and collision detection
+- RAM sharing for environment pools to enable workload accounts to allocate VPC CIDRs
+- Comprehensive outputs for all pool IDs, ARNs, and RAM share ARNs
+- Input validation for CIDR blocks and required fields
+- Full support for tagging across all IPAM resources
+- Terraform >= 1.6.0 and AWS provider >= 5.0 support
+- Provider alias support for organization management operations
+
+
 ## [1.0] - 2026-07-03
 
 ### Added

@@ -129,25 +129,32 @@ resource "aws_vpc_ipam_pool_cidr" "environment" {
 # the isolated topology and also safe to enable alongside centrally-managed
 # VPCs — IPAM guarantees non-overlapping allocations regardless of who creates
 # the VPC.
+#
+# Each environment pool gets its own RAM share with a descriptive name so
+# consumer accounts can immediately identify which pool is prod/nonprod/shared
+# without needing to cross-reference pool IDs with the network team.
 # ------------------------------------------------------------------------------
 resource "aws_ram_resource_share" "ipam_pools" {
-  count = var.share_with_organization ? 1 : 0
+  for_each = var.share_with_organization ? var.environment_pools : {}
 
-  name                      = "ipam-environment-pools"
+  name                      = "ipam-pool-${each.key}"
   allow_external_principals = false
-  tags                      = merge(var.tags, { Name = "ipam-environment-pools" })
+  tags = merge(var.tags, {
+    Name        = "ipam-pool-${each.key}"
+    environment = each.key
+  })
 }
 
 resource "aws_ram_resource_association" "ipam_pools" {
   for_each = var.share_with_organization ? var.environment_pools : {}
 
   resource_arn       = aws_vpc_ipam_pool.environment[each.key].arn
-  resource_share_arn = aws_ram_resource_share.ipam_pools[0].arn
+  resource_share_arn = aws_ram_resource_share.ipam_pools[each.key].arn
 }
 
 resource "aws_ram_principal_association" "organization" {
-  count = var.share_with_organization ? 1 : 0
+  for_each = var.share_with_organization ? var.environment_pools : {}
 
   principal          = var.organization_arn
-  resource_share_arn = aws_ram_resource_share.ipam_pools[0].arn
+  resource_share_arn = aws_ram_resource_share.ipam_pools[each.key].arn
 }
