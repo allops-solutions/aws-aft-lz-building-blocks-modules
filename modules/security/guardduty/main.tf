@@ -38,11 +38,18 @@ resource "aws_guardduty_detector" "management" {
 }
 
 # ------------------------------------------------------------------------------
-# Brief pause after enabling GuardDuty on the management account to allow the
-# service to propagate before member enrollment attempts to add it.
+# Pause after enabling GuardDuty on the management account. Enabling the
+# detector in the org master is not immediately visible to the delegated
+# administrator's member-enrollment API. Without a sufficient delay, enrolling
+# the management account as a member fails with:
+#   "Operation failed because your organization master must first enable
+#    GuardDuty to be added as a member"
+#
+# time_sleep only pauses on create (no triggers), so this cost is paid once on
+# initial provisioning, not on every apply. 60s comfortably covers propagation.
 # ------------------------------------------------------------------------------
 resource "time_sleep" "after_management_detector" {
-  create_duration = "5s"
+  create_duration = "60s"
 
   depends_on = [aws_guardduty_detector.management]
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## [v2.0] - 2026-07-24
+
+### Fixed
+
+- Increased `time_sleep` duration after GuardDuty management detector enablement from 5s to 60s to ensure service propagation before member enrollment
+
+
 # Changelog
 
 ## [v1.0] - 2026-07-24
