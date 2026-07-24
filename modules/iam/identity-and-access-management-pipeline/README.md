@@ -1,124 +1,67 @@
 # Identity and Access Management Pipeline Module
 
-A comprehensive Terraform module for deploying an automated IAM management pipeline that orchestrates Terraform deployments across AWS accounts. The module provisions a complete CI/CD infrastructure using AWS CodePipeline, CodeBuild, and EventBridge with support for multiple version control systems and account lifecycle event triggers.
+This Terraform module automates the deployment of an AWS CodePipeline infrastructure for identity and access management operations. It orchestrates Terraform-based account customizations through a fully managed CI/CD pipeline that integrates with AWS Control Tower or Account Factory for Terraform (AFT) account lifecycle events.
 
 ## Features
 
-- **Multi-VCS Support**: Seamlessly integrate with AWS CodeCommit, GitHub, or GitHub Enterprise
-- **Account Lifecycle Integration**: Automatically trigger Terraform deployments from AWS Control Tower or Account Factory for Terraform (AFT) account provisioning events
-- **Flexible Approval Workflows**: Optional manual approval step between Terraform plan and apply stages
-- **VPC Support**: Deploy CodeBuild projects and GitHub Enterprise connections within private VPCs
-- **Security-First**: Pre-configured with encryption, versioning, and least-privilege IAM policies
-- **State Management**: Dedicated S3 backend for Terraform state with versioning and encryption
-- **Artifact Management**: Secure artifact storage with encryption and versioning for pipeline artifacts
+- **Multi-VCS Support**: Seamlessly integrate with AWS CodeCommit, GitHub, or GitHub Enterprise Server repositories
+- **Event-Driven Automation**: Automatically trigger the pipeline on AWS Control Tower account creation/updates or AFT new account events
+- **Terraform Automation**: Automated plan and apply stages with optional manual approval gates for governance
+- **Flexible Workflows**: Choose between combined plan+apply or separated stages with manual review
+- **Secure by Default**: Encrypted S3 buckets, least-privilege IAM roles, and CloudWatch logging
+- **VPC Support**: Optional VPC configuration for CodeBuild and CodeConnections hosts
+- **Production-Ready**: Includes Terraform state backend, artifact storage, and comprehensive logging
 
 ## Usage
 
-### Basic Example (GitHub with Manual Approval)
-
 ```hcl
-module "identity_access_management_pipeline" {
-  source = "./modules/iam/identity-and-access-management-pipeline"
+module "identity_and_access_management_pipeline" {
+  # Pin to a specific version for production use:
+  # source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/iam/identity-and-access-management-pipeline?ref=iam-identity-and-access-management-pipeline-v1.0"
+  source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/iam/identity-and-access-management-pipeline?ref=iam-identity-and-access-management-pipeline-v1.0"
 
-  solution_name  = "aws-identity-mgmt"
-  repository_name = "my-org/iam-terraform-repo"
-  branch_name    = "main"
-  vcs_provider   = "github"
-
-  enable_manual_approval           = true
-  account_lifecycle_events_source  = "None"
-  terraform_version                = "1.15.0"
+  solution_name                   = "aws-identity-mgmt"
+  repository_name                 = "allops-solutions/aws-ps-pipeline"
+  branch_name                     = "main"
+  vcs_provider                    = "github"
+  account_lifecycle_events_source = "CT"
+  terraform_version               = "1.15.0"
+  enable_manual_approval          = true
 
   tags = {
-    Environment = "production"
-    Owner       = "platform-team"
+    Environment = "Production"
+    Module      = "IdentityManagement"
   }
 
   providers = {
-    aws.event-source-account = aws
+    aws                      = aws.primary-region
+    aws.event-source-account = aws.org-management
   }
 }
 ```
 
-### AWS Control Tower Integration
+### Event Source Configuration
+
+The module supports three account lifecycle event sources:
+
+- **`"None"`** (default): Manual pipeline triggers only; no automatic event-based triggering
+- **`"CT"`**: Captures AWS Control Tower account creation and update events from the management account
+- **`"AFT"`**: Captures Account Factory for Terraform events from the AFT management account
+
+When using `"CT"` or `"AFT"`, you must configure the `aws.event-source-account` provider alias to point to the appropriate management account.
+
+### VPC Configuration
+
+To enable VPC connectivity for CodeBuild and CodeConnections hosts:
 
 ```hcl
-module "identity_access_management_pipeline" {
-  source = "./modules/iam/identity-and-access-management-pipeline"
-
-  solution_name  = "aws-identity-mgmt"
-  repository_name = "CodeCommit-Repo-Name"
-  branch_name    = "main"
-  vcs_provider   = "codecommit"
-
-  enable_manual_approval           = false
-  account_lifecycle_events_source  = "CT"
-  terraform_version                = "1.15.0"
-
-  tags = {
-    Environment = "production"
-  }
-
-  providers = {
-    aws.event-source-account = aws.ct-management  # Must have access to Control Tower management account
-  }
-}
-```
-
-### AFT (Account Factory for Terraform) Integration
-
-```hcl
-module "identity_access_management_pipeline" {
-  source = "./modules/iam/identity-and-access-management-pipeline"
-
-  solution_name  = "aws-identity-mgmt"
-  repository_name = "my-org/iam-terraform-repo"
-  branch_name    = "main"
-  vcs_provider   = "github"
-
-  enable_manual_approval           = true
-  account_lifecycle_events_source  = "AFT"
-  terraform_version                = "1.15.0"
-
-  tags = {
-    Environment = "production"
-  }
-
-  providers = {
-    aws.event-source-account = aws.aft-management  # Must have access to AFT management account
-  }
-}
-```
-
-### VPC-Enabled Deployment (GitHub Enterprise)
-
-```hcl
-module "identity_access_management_pipeline" {
-  source = "./modules/iam/identity-and-access-management-pipeline"
-
-  solution_name          = "aws-identity-mgmt"
-  repository_name        = "my-org/iam-terraform-repo"
-  branch_name            = "main"
-  vcs_provider           = "githubenterprise"
-  github_enterprise_url  = "https://github.my-company.com"
-
+module "identity_and_access_management_pipeline" {
+  # ... other configuration ...
   enable_vpc_config = true
   vpc_config = {
-    vpc_id          = aws_vpc.pipeline.id
-    subnets         = [aws_subnet.private[0].id, aws_subnet.private[1].id]
+    vpc_id          = aws_vpc.main.id
+    subnets         = [aws_subnet.private_1.id, aws_subnet.private_2.id]
     security_groups = [aws_security_group.codebuild.id]
-  }
-
-  enable_manual_approval           = true
-  account_lifecycle_events_source  = "None"
-  terraform_version                = "1.15.0"
-
-  tags = {
-    Environment = "production"
-  }
-
-  providers = {
-    aws.event-source-account = aws
   }
 }
 ```
@@ -127,8 +70,15 @@ module "identity_access_management_pipeline" {
 
 | Name | Version |
 |------|---------|
-| terraform | >= 1.5.0 |
-| aws | ~> 5.0 |
+| terraform | >= 1.6.0 |
+| aws | >= 6.23.0 |
+
+## Providers
+
+| Name | Version | Alias | Purpose |
+|------|---------|-------|---------|
+| aws | >= 6.23.0 | — | Default provider for pipeline infrastructure |
+| aws | >= 6.23.0 | event-source-account | Provider for the account containing account lifecycle events (AFT or Control Tower management account) |
 
 ## Inputs
 
@@ -136,152 +86,49 @@ module "identity_access_management_pipeline" {
 |------|-------------|------|---------|:--------:|
 | `solution_name` | Solution name used for naming pipeline infrastructure resources (CodePipeline, CodeBuild, IAM roles, artifact bucket). Does NOT affect the Terraform state backend bucket. | `string` | `"aws-identity-mgmt"` | No |
 | `repository_name` | VCS repository name. For external VCS (GitHub/GitHub Enterprise), provide the full repository path (e.g., `GitHubOrganization/repository-name`). For CodeCommit, use the repository name only. | `string` | `"aws-ps-pipeline"` | No |
-| `branch_name` | Repository main branch name to trigger the pipeline on. | `string` | `"main"` | No |
-| `vcs_provider` | Version control system provider. Valid values: `codecommit`, `github`, or `githubenterprise`. | `string` | `"github"` | No |
-| `github_enterprise_url` | GitHub Enterprise Server URL. Required only when `vcs_provider` is set to `githubenterprise`. Example: `https://github.my-company.com`. | `string` | `"null"` | No |
-| `enable_vpc_config` | Enable VPC configuration for CodeBuild projects and CodeConnections Host. When enabled, `vpc_config` must be provided. | `bool` | `false` | No |
-| `vpc_config` | VPC configuration for CodeBuild projects and GitHub Enterprise CodeConnections. Specify VPC ID, subnets, and security groups. Required only when `enable_vpc_config` is `true`. | <pre>object({<br>  vpc_id          = string<br>  subnets         = list(string)<br>  security_groups = list(string)<br>})</pre> | <pre>{<br>  vpc_id          = ""<br>  subnets         = []<br>  security_groups = []<br>}</pre> | No |
-| `account_lifecycle_events_source` | Source of account lifecycle events to trigger the pipeline. Valid values: `AFT` (Account Factory for Terraform), `CT` (AWS Control Tower), or `None` (manual/webhook triggers only). When set to `CT` or `AFT`, configure the `aws.event-source-account` provider accordingly. | `string` | `"None"` | No |
+| `branch_name` | Repository main branch name to monitor for changes. | `string` | `"main"` | No |
+| `vcs_provider` | Version control system provider. Valid values: `"codecommit"`, `"github"`, `"githubenterprise"`. | `string` | `"github"` | No |
+| `github_enterprise_url` | GitHub Enterprise Server base URL. Required only when `vcs_provider = "githubenterprise"`. | `string` | `"null"` | No |
+| `account_lifecycle_events_source` | Event source for account lifecycle triggers. Valid values: `"AFT"` (Account Factory for Terraform), `"CT"` (Control Tower), `"None"` (manual triggers only). | `string` | `"None"` | No |
+| `enable_vpc_config` | Enable VPC configuration for CodeBuild projects and CodeConnections hosts. | `bool` | `false` | No |
+| `vpc_config` | VPC configuration object containing `vpc_id`, `subnets`, and `security_groups`. Required when `enable_vpc_config = true`. | `object({ vpc_id = string, subnets = list(string), security_groups = list(string) })` | `{ vpc_id = "", subnets = [], security_groups = [] }` | No |
 | `terraform_version` | Terraform version to install and use in the CodeBuild pipeline. | `string` | `"1.15.0"` | No |
-| `enable_manual_approval` | Enable a manual approval step between the Terraform plan and apply stages in the pipeline. When enabled, plan results must be reviewed and approved before apply proceeds. | `bool` | `true` | No |
-| `tags` | Map of tags to apply to all resources created by this module. | `map(string)` | `{}` | No |
+| `enable_manual_approval` | Enable a manual approval stage between Terraform plan and apply stages. When disabled, plan and apply run sequentially in a single build. | `bool` | `true` | No |
+| `tags` | Additional tags to apply to all created resources. | `map(string)` | `{}` | No |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| `codepipeline_name` | Name of the CodePipeline pipeline. |
-| `codepipeline_arn` | ARN of the CodePipeline pipeline. |
+| `codepipeline_arn` | ARN of the CodePipeline. |
+| `codepipeline_name` | Name of the CodePipeline. |
+| `event_bus_arn` | ARN of the EventBridge event bus (if `account_lifecycle_events_source != "None"`). |
+| `event_bus_name` | Name of the EventBridge event bus (if `account_lifecycle_events_source != "None"`). |
 | `pipeline_bucket_name` | Name of the S3 bucket used for CodePipeline artifacts. |
-| `pipeline_bucket_arn` | ARN of the S3 bucket used for CodePipeline artifacts. |
 | `tf_backend_bucket_name` | Name of the S3 bucket used for Terraform state backend. |
-| `tf_backend_bucket_arn` | ARN of the S3 bucket used for Terraform state backend. |
-| `codebuild_plan_project_name` | Name of the CodeBuild project for Terraform plan (only created when `enable_manual_approval` is `true`). |
-| `codebuild_apply_project_name` | Name of the CodeBuild project for Terraform apply. |
-| `codepipeline_role_arn` | ARN of the IAM role used by CodePipeline. |
-| `codebuild_role_arn` | ARN of the IAM role used by CodeBuild. |
-| `codecommit_repository_arn` | ARN of the CodeCommit repository (only created when `vcs_provider` is `codecommit`). |
-| `codecommit_repository_clone_url_http` | HTTPS clone URL of the CodeCommit repository (only created when `vcs_provider` is `codecommit`). |
-| `github_connection_arn` | ARN of the GitHub CodeStar connection (only created when `vcs_provider` is `github`). |
-| `github_enterprise_connection_arn` | ARN of the GitHub Enterprise CodeStar connection (only created when `vcs_provider` is `githubenterprise`). |
-| `event_bus_arn` | ARN of the EventBridge event bus for account lifecycle events (only created when `account_lifecycle_events_source` is not `None`). |
-| `event_bus_name` | Name of the EventBridge event bus for account lifecycle events (only created when `account_lifecycle_events_source` is not `None`). |
-| `lambda_function_arn` | ARN of the Lambda function that forwards AFT events to the EventBridge bus (only created when `account_lifecycle_events_source` is `AFT`). |
-
-## Provider Configuration
-
-This module requires the primary `aws` provider and conditionally uses an additional `aws.event-source-account` provider alias depending on the `account_lifecycle_events_source` setting:
-
-- **`account_lifecycle_events_source = "CT"`**: Set `aws.event-source-account` to a provider with access to your AWS Control Tower management account (the organization management account).
-  
-- **`account_lifecycle_events_source = "AFT"`**: Set `aws.event-source-account` to a provider with access to your AFT management account.
-
-- **`account_lifecycle_events_source = "None"`**: Set `aws.event-source-account` to the default `aws` provider.
-
-### Example Provider Configuration
-
-```hcl
-provider "aws" {
-  region = "us-east-1"
-}
-
-provider "aws" {
-  alias  = "event-source-account"
-  region = "us-east-1"
-  
-  assume_role {
-    role_arn = "arn:aws:iam::123456789012:role/CrossAccountPipelineRole"
-  }
-}
-
-module "pipeline" {
-  source = "./modules/iam/identity-and-access-management-pipeline"
-  
-  account_lifecycle_events_source = "CT"
-  # ... other configuration ...
-  
-  providers = {
-    aws.event-source-account = aws.event-source-account
-  }
-}
-```
+| `codebuild_plan_project_name` | Name of the CodeBuild plan project (if `enable_manual_approval = true`). |
+| `codebuild_apply_project_name` | Name of the CodeBuild apply project. |
+| `codecommit_repository_arn` | ARN of the CodeCommit repository (if `vcs_provider = "codecommit"`). |
+| `codecommit_repository_clone_url_http` | HTTP clone URL of the CodeCommit repository (if `vcs_provider = "codecommit"`). |
 
 ## How It Works
 
-### Pipeline Flow
+1. **Version Control Integration**: The module monitors a specified branch in your Git repository (CodeCommit, GitHub, or GitHub Enterprise)
+2. **Event Triggering**: Optionally triggers on AWS Control Tower or AFT account lifecycle events via EventBridge
+3. **Terraform Plan**: Executes `terraform plan` to preview infrastructure changes
+4. **Manual Approval** (optional): Requires human review before proceeding with apply
+5. **Terraform Apply**: Executes `terraform apply` to provision the infrastructure
+6. **Logging**: All pipeline activity is logged to CloudWatch Logs for auditing and troubleshooting
 
-1. **Source Stage**: CodePipeline retrieves Terraform configuration from the specified VCS (CodeCommit, GitHub, or GitHub Enterprise)
-2. **Plan Stage** (optional): CodeBuild runs `terraform plan` and generates a plan file (only when manual approval is enabled)
-3. **Approval Stage** (optional): Manual approval is required to proceed with apply (only when enabled)
-4. **Apply Stage**: CodeBuild executes `terraform apply` to deploy infrastructure changes
+## Security Considerations
 
-### Event Triggering
-
-The pipeline can be triggered through multiple mechanisms:
-
-- **Manual Trigger**: Direct execution via AWS Console or AWS CLI
-- **VCS Webhook**: Automatic trigger on push to specified branch (GitHub/GitHub Enterprise with V2 pipelines)
-- **Control Tower Events**: Automatic trigger on account creation/update (when `account_lifecycle_events_source = "CT"`)
-- **AFT Events**: Automatic trigger on AFT account provisioning (when `account_lifecycle_events_source = "AFT"`)
-- **CodeCommit**: Automatic trigger on branch update via EventBridge (when using CodeCommit)
-
-### State Management
-
-Terraform state is stored in a dedicated S3 bucket with:
-- Automatic versioning enabled for rollback capability
-- Server-side encryption using AWS KMS
-- Public access completely blocked
-- Separate lifecycle from pipeline artifacts
-
-### Security Posture
-
-- **Encryption**: All S3 buckets encrypted with AWS KMS
-- **Access Control**: IAM policies follow the principle of least privilege
-- **Audit Trail**: S3 versioning and CloudWatch Logs (365-day retention) maintain complete audit history
-- **Network Isolation**: Optional VPC deployment for private connectivity
-- **Code Scanning**: Checkov annotations embedded for infrastructure security validation
-
-## Terraform Buildspecs
-
-The module uses three buildspec templates located in the `assets/buildspecs` directory:
-
-- **buildspec-plan.yml**: Runs `terraform init`, `terraform validate`, and `terraform plan`
-- **buildspec-apply.yml**: Runs `terraform init` and `terraform apply` (used when manual approval is enabled)
-- **buildspec-combined.yml**: Runs `terraform init`, `terraform plan`, and `terraform apply` (used when manual approval is disabled)
-
-Each buildspec is dynamically selected based on the `enable_manual_approval` setting.
-
-## Permissions and IAM Roles
-
-This module creates the following IAM roles:
-
-- **CodePipeline Role**: Orchestrates pipeline execution, manages artifacts, and assumes CodeBuild roles
-- **CodeBuild Role**: Executes Terraform commands, accesses S3 backends and artifact buckets, manages Identity Center resources
-- **EventBridge Trigger Role**: Allows EventBridge rules to start pipeline execution
-- **Control Tower Event Role** (CT mode): Captures Control Tower account events and forwards them to the pipeline event bus
-- **Lambda Role** (AFT mode): Executes the event forwarder Lambda function and publishes events to the event bus
-
-## Troubleshooting
-
-### Pipeline Not Triggering from Account Lifecycle Events
-
-- Verify the `aws.event-source-account` provider has the correct cross-account role with permissions to read SSM parameters and publish events
-- Confirm the `account_lifecycle_events_source` variable matches your event source (AFT or CT)
-- Check EventBridge rule patterns match your account IDs
-
-### CodeBuild Failures
-
-- Review CodeBuild logs in CloudWatch Logs at `/aws/codebuild/{solution_name}-plan` or `/aws/codebuild/{solution_name}-apply`
-- Verify the Terraform version specified is compatible with your configurations
-- Ensure IAM roles have sufficient permissions for your Terraform resources
-
-### GitHub Connection Issues
-
-- Authenticate the CodeStar connection in the AWS Console (required one-time setup)
-- For GitHub Enterprise, verify the VPC has outbound access to your GitHub Enterprise URL
-- Confirm the repository path format is correct: `Organization/Repository`
+- **Encrypted Storage**: Both S3 buckets (pipeline artifacts and Terraform backend) use AWS KMS encryption at rest
+- **Versioning Enabled**: S3 buckets maintain version history for disaster recovery
+- **Public Access Blocked**: All S3 buckets block public access
+- **IAM Least Privilege**: All IAM roles follow the principle of least privilege with minimal required permissions
+- **Cross-Account Access**: When using Control Tower or AFT events, cross-account event delivery is restricted to the source management account
+- **VPC Isolation**: Optional VPC configuration allows CodeBuild to run in a private network environment
 
 ## License
 
-Copyright Amazon.com, Inc. or its affiliates. All rights reserved.
-SPDX-License-Identifier: Apache-2.0
+Copyright Amazon.com, Inc. or its affiliates. All rights reserved. SPDX-License-Identifier: Apache-2.0

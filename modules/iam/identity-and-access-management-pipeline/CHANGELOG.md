@@ -2,6 +2,28 @@
 
 # Changelog
 
+## [v1.0] - 2026-07-24
+
+### Added
+
+- Initial release of the Identity and Access Management Pipeline module
+- AWS CodePipeline infrastructure for Terraform-based identity and access management automation
+- Multi-VCS support: AWS CodeCommit, GitHub, and GitHub Enterprise Server
+- EventBridge event bus for capturing account lifecycle events from AWS Control Tower or Account Factory for Terraform (AFT)
+- Lambda function for forwarding AFT new account events to the custom EventBridge bus
+- CodeBuild projects for Terraform plan and apply stages
+- Optional manual approval stage between plan and apply for enhanced governance
+- Support for VPC-enabled CodeBuild projects and CodeConnections hosts
+- S3 buckets for CodePipeline artifacts and Terraform state backend with encryption and versioning
+- IAM roles and policies with least-privilege access for CodePipeline, CodeBuild, Lambda, and EventBridge
+- CloudWatch Logs integration for CodeBuild project logging
+- Support for account lifecycle event triggers from Control Tower or AFT
+- Comprehensive variable configuration for customizing pipeline behavior
+- Multiple buildspec files for different workflow scenarios (plan-only, apply-only, combined plan+apply)
+
+
+# Changelog
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
