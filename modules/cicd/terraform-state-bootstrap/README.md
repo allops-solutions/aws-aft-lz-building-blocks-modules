@@ -1,6 +1,6 @@
 # Terraform State Bootstrap Module
 
-This module creates a secure, production-ready S3 bucket for Terraform remote state in your AWS account. The bucket is automatically appended with the current account ID to ensure uniqueness across accounts and is configured with encryption, versioning, and security best practices.
+This module creates a secure S3 bucket for Terraform remote state storage in the current AWS account. The bucket is configured with versioning, encryption, public access blocking, and a policy that enforces secure (HTTPS) transport.
 
 ## Usage
 
@@ -9,87 +9,46 @@ module "terraform_state" {
   source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/cicd/terraform-state-bootstrap?ref=cicd-terraform-state-bootstrap-v1.0"
 
   bucket_name_prefix = "my-org-terraform-state"
-  
+
   tags = {
-    Environment = "shared"
-    Purpose     = "terraform-state"
+    Environment = "production"
+    Owner       = "platform-team"
   }
 }
 
-# To pin to a specific version:
-# source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/cicd/terraform-state-bootstrap?ref=cicd-terraform-state-bootstrap-v1.0"
+# To pin to a specific version, replace the ref parameter:
+# ref=cicd-terraform-state-bootstrap-v1.0
 ```
 
-The resulting S3 bucket name will be: `my-org-terraform-state-<account-id>`
+The bucket name is automatically constructed as `{bucket_name_prefix}-{aws_account_id}`, ensuring uniqueness across AWS accounts.
 
 ## Requirements
 
 | Name | Version |
 |------|---------|
 | terraform | >= 1.6.0 |
-| aws | >= 5.0 |
+| aws | >= 6.23.0 |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| bucket_name_prefix | Prefix for the Terraform state bucket name. The current AWS account ID is appended automatically. | `string` | `"terraform-state"` | no |
-| tags | Tags to apply to the Terraform state bucket resources. | `map(string)` | `{}` | no |
-
-### Validation
-
-The `bucket_name_prefix` must:
-- Start and end with a lowercase letter or digit
-- Contain only lowercase letters, digits, dots, or hyphens
-- Be 50 characters or fewer (to allow room for the appended account ID in the final bucket name)
+| `bucket_name_prefix` | Prefix for the Terraform state bucket name. The current AWS account ID is appended automatically. | `string` | `"terraform-state"` | no |
+| `tags` | Tags to apply to the Terraform state bucket resources. | `map(string)` | `{}` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| bucket_name | Name of the Terraform state S3 bucket. |
-| bucket_arn | ARN of the Terraform state S3 bucket. |
+| `bucket_name` | Name of the Terraform state S3 bucket. |
+| `bucket_arn` | ARN of the Terraform state S3 bucket. |
 
 ## Features
 
-- **S3 Bucket Versioning**: Enabled for state history and recovery
-- **Server-Side Encryption**: AES256 encryption enabled by default
-- **Public Access Blocking**: All public access is blocked
-- **Bucket Ownership Controls**: Enforces BucketOwnerEnforced ownership model
-- **Secure Transport Policy**: Denies any requests over non-HTTPS connections
-- **Lifecycle Protection**: Prevents accidental bucket destruction with `prevent_destroy`
-- **Account Isolation**: Bucket name includes account ID for multi-account deployments
-
-## Examples
-
-### Basic Usage
-
-```hcl
-module "terraform_state" {
-  source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/cicd/terraform-state-bootstrap?ref=cicd-terraform-state-bootstrap-v1.0"
-}
-```
-
-### With Custom Prefix and Tags
-
-```hcl
-module "terraform_state" {
-  source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/cicd/terraform-state-bootstrap?ref=cicd-terraform-state-bootstrap-v1.0"
-
-  bucket_name_prefix = "acme-terraform-state"
-  
-  tags = {
-    Environment = "prod"
-    Team        = "infrastructure"
-    CostCenter  = "engineering"
-  }
-}
-
-output "state_bucket" {
-  value = module.terraform_state.bucket_name
-}
-
-output "state_bucket_arn" {
-  value = module.terraform_state.bucket_arn
-}
-```
+- **Versioning**: State versions are retained for recovery and auditing
+- **Encryption**: AES256 server-side encryption at rest
+- **Access Control**: Public access is blocked at all levels
+- **Transport Security**: Bucket policy denies non-HTTPS requests
+- **Ownership**: BucketOwnerEnforced object ownership for access consistency
+- **Lifecycle Protection**: `prevent_destroy` protects the bucket from accidental deletion
+- **Account Isolation**: Account ID automatically appended to bucket name for multi-account deployments
