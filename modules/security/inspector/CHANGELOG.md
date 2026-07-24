@@ -14,3 +14,23 @@
 - ECR continuous re-scanning window configuration with configurable retention durations
 - Automatic region deduplication and order-independent region lists
 - Outputs for delegated admin account ID, managed regions, enablement policy ID, and association targets
+
+
+                  + "CloudFormation.3",
+                  + "CloudFormation.4",
+                  + "CloudTrail.2",
+                  + "GuardDuty.10",
+                  + "GuardDuty.11",
+                  + "GuardDuty.12",
+                  + "GuardDuty.13",
+                  + "GuardDuty.5",
+                  + "GuardDuty.6",
+                  + "GuardDuty.7",
+                  + "GuardDuty.8",
+                  + "GuardDuty.9",
+                  + "IAM.19",
+                  + "IAM.28",
+                  + "Inspector.2",
+                  + "Inspector.3",
+                  + "Inspector.4",
+                  + "SSM.6",
