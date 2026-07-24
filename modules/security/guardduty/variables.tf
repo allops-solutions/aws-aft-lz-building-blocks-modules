@@ -1,94 +1,91 @@
-variable "auto_enable_organization_members" {
-  description = "Define whether enable GuardDuty Organization Configuration or not."
+variable "delegated_admin_account_id" {
+  description = "Account ID to register as the Amazon GuardDuty delegated administrator for the organization."
   type        = string
-  default     = "ALL"
-  validation {
-    condition     = contains(["ALL", "NEW", "NONE"], var.auto_enable_organization_members)
-    error_message = "Valid values are: ALL, NEW, and NONE."
-  }
 }
 
-variable "datasources" {
-  description = "Define the collected datasources configuration."
-  type        = map(bool)
-  default = {
-    s3_logs            = false
-    kubernetes         = false
-    malware_protection = false
-  }
-  validation {
-    condition = alltrue([
-      for k, v in var.datasources : true if
-      contains(["s3_logs", "kubernetes", "malware_protection"], k)
-    ])
-    error_message = "Valid values are: s3_logs, kubernetes, and malware_protection."
-  }
+variable "s3_protection_enabled" {
+  description = "Enable GuardDuty S3 Protection across enrolled accounts. Detects data exfiltration and destruction attempts in S3 buckets."
+  type        = bool
+  default     = false
 }
 
-variable "organization_features" {
+variable "eks_audit_logs_enabled" {
+  description = "Enable GuardDuty EKS Audit Log Monitoring across enrolled accounts. Analyzes Kubernetes audit logs for suspicious control plane activity."
+  type        = bool
+  default     = false
+}
+
+variable "ebs_malware_protection_enabled" {
+  description = "Enable GuardDuty Malware Protection for EC2 across enrolled accounts. Scans EBS volumes for malware when threats are detected."
+  type        = bool
+  default     = false
+}
+
+variable "rds_protection_enabled" {
+  description = "Enable GuardDuty RDS Protection across enrolled accounts. Detects anomalous login activity on Aurora and RDS databases."
+  type        = bool
+  default     = false
+}
+
+variable "lambda_protection_enabled" {
+  description = "Enable GuardDuty Lambda Protection across enrolled accounts. Monitors Lambda network activity for threats like cryptomining."
+  type        = bool
+  default     = false
+}
+
+variable "runtime_monitoring_enabled" {
+  description = "Enable GuardDuty Runtime Monitoring across enrolled accounts. Monitors OS-level events on EKS, EC2, and ECS/Fargate workloads."
+  type        = bool
+  default     = false
+}
+
+variable "ai_protection_enabled" {
+  description = "Enable GuardDuty AI Protection across enrolled accounts. Detects threats to AI workloads built on Amazon Bedrock, AgentCore, and SageMaker AI."
+  type        = bool
+  default     = false
+}
+
+variable "runtime_monitoring_configuration" {
   description = <<-EOF
-    GuardDuty features that will be enabled.
-    According to GuardDuty documentation, specifying both RUNTIME_MONITORING
-    (preferred) and EKS_RUNTIME_MONITORING will cause an error.
-    See https://docs.aws.amazon.com/guardduty/latest/APIReference/API_OrganizationFeatureConfiguration.html
+    Sub-feature configuration for Runtime Monitoring. Controls automated agent
+    management for EKS, ECS Fargate, and EC2 workloads. Only effective when
+    runtime_monitoring_enabled is true.
+
+    All sub-features default to ALL (enabled) when Runtime Monitoring is active.
+    Set individual sub-features to NONE to disable them.
 
     Example:
     ```
-      organization_features = {
-        S3_DATA_EVENTS         = "NEW"
-        EKS_AUDIT_LOGS         = "NEW"
-        EBS_MALWARE_PROTECTION = "NEW"
-        RDS_LOGIN_EVENTS       = "NEW"
-        LAMBDA_NETWORK_LOGS    = "NEW"
-        RUNTIME_MONITORING     = "NEW"
+      runtime_monitoring_configuration = {
+        EKS_ADDON_MANAGEMENT         = "ALL"
+        ECS_FARGATE_AGENT_MANAGEMENT = "ALL"
+        EC2_AGENT_MANAGEMENT         = "NONE"
       }
     ```
   EOF
   type        = map(string)
   default = {
-    S3_DATA_EVENTS         = "NONE"
-    EKS_AUDIT_LOGS         = "NONE"
-    EBS_MALWARE_PROTECTION = "NONE"
-    RDS_LOGIN_EVENTS       = "NONE"
-    LAMBDA_NETWORK_LOGS    = "NONE"
-    RUNTIME_MONITORING     = "NONE"
+    EKS_ADDON_MANAGEMENT         = "ALL"
+    ECS_FARGATE_AGENT_MANAGEMENT = "ALL"
+    EC2_AGENT_MANAGEMENT         = "ALL"
   }
   validation {
     condition = alltrue([
-      for k, v in var.organization_features : true if
-      contains(["S3_DATA_EVENTS", "EKS_AUDIT_LOGS", "EBS_MALWARE_PROTECTION", "RDS_LOGIN_EVENTS", "LAMBDA_NETWORK_LOGS", "EKS_RUNTIME_MONITORING", "RUNTIME_MONITORING"], k) &&
-      contains(["NEW", "ALL", "NONE"], v)
-    ])
-    error_message = "Valid feature names: S3_DATA_EVENTS, EKS_AUDIT_LOGS, EBS_MALWARE_PROTECTION, RDS_LOGIN_EVENTS, LAMBDA_NETWORK_LOGS, EKS_RUNTIME_MONITORING, RUNTIME_MONITORING. Valid values: NEW, ALL, NONE."
-  }
-}
-
-variable "additional_configuration" {
-  description = <<-EOF
-    Additional configuration for RUNTIME_MONITORING and EKS_RUNTIME_MONITORING features.
-    See https://docs.aws.amazon.com/guardduty/latest/APIReference/API_OrganizationAdditionalConfiguration.html
-
-    Example:
-    ```
-      additional_configuration = {
-        EKS_ADDON_MANAGEMENT         = "NEW" # for RUNTIME_MONITORING or EKS_RUNTIME_MONITORING
-        ECS_FARGATE_AGENT_MANAGEMENT = "NEW" # for RUNTIME_MONITORING only
-        EC2_AGENT_MANAGEMENT         = "NEW" # for RUNTIME_MONITORING only
-      }
-    ```
-  EOF
-  type        = map(string)
-  default = {
-    EKS_ADDON_MANAGEMENT         = "NONE"
-    ECS_FARGATE_AGENT_MANAGEMENT = "NONE"
-    EC2_AGENT_MANAGEMENT         = "NONE"
-  }
-  validation {
-    condition = alltrue([
-      for k, v in var.additional_configuration : true if
+      for k, v in var.runtime_monitoring_configuration :
       contains(["EKS_ADDON_MANAGEMENT", "ECS_FARGATE_AGENT_MANAGEMENT", "EC2_AGENT_MANAGEMENT"], k) &&
-      contains(["NEW", "ALL", "NONE"], v)
+      contains(["ALL", "NEW", "NONE"], v)
     ])
-    error_message = "Valid names: EKS_ADDON_MANAGEMENT, ECS_FARGATE_AGENT_MANAGEMENT, EC2_AGENT_MANAGEMENT. Valid values: NEW, ALL, NONE."
+    error_message = "Valid keys: EKS_ADDON_MANAGEMENT, ECS_FARGATE_AGENT_MANAGEMENT, EC2_AGENT_MANAGEMENT. Valid values: ALL, NEW, NONE."
   }
+}
+
+variable "excluded_account_ids" {
+  description = "Account IDs to exclude from GuardDuty enrollment. These accounts will not have GuardDuty enabled even if they are discovered in the AFT metadata table."
+  type        = list(string)
+  default     = []
+}
+
+variable "tags" {
+  description = "Tags to apply to all resources. Passed in from the root module."
+  type        = map(string)
 }

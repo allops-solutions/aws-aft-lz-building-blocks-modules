@@ -1,5 +1,29 @@
 # Changelog
 
+# Changelog
+
+## [v1.0] - 2026-07-24
+
+### Added
+
+- Initial release of the security/guardduty module
+- Organization-wide Amazon GuardDuty configuration with delegated administrator support
+- Automatic account discovery from Control Tower-managed OUs with exclusion capabilities
+- Protection plan feature configuration:
+  - S3 Data Events protection
+  - EKS Audit Log monitoring
+  - EBS Malware Protection for EC2
+  - RDS Login Events monitoring
+  - Lambda Network activity monitoring
+  - Runtime Monitoring (with sub-feature configuration for EKS, ECS Fargate, and EC2)
+  - AI Protection for Bedrock, AgentCore, and SageMaker AI workloads
+- Malware Protection service access enablement for delegated administrator
+- Member account enrollment with explicit control over auto-enrollment
+- Support for fine-grained Runtime Monitoring sub-feature configuration
+- Automatic exclusion of specified accounts from GuardDuty enrollment
+- Proper handling of deprecated EKS_RUNTIME_MONITORING feature
+
+
 ## [v1.0] - 2026-07-03
 
 ### Added
