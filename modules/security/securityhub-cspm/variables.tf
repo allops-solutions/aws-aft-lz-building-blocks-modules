@@ -78,12 +78,31 @@ variable "excluded_account_ids" {
 variable "notification_min_severity" {
   description = "Lowest finding severity label that triggers a notification. Findings at this level and above are delivered. One of LOW, MEDIUM, HIGH, or CRITICAL."
   type        = string
-  default     = "MEDIUM"
+  default     = "HIGH"
 
   validation {
     condition     = contains(["LOW", "MEDIUM", "HIGH", "CRITICAL"], upper(var.notification_min_severity))
     error_message = "notification_min_severity must be one of LOW, MEDIUM, HIGH, or CRITICAL."
   }
+}
+
+# ------------------------------------------------------------------------------
+# Deployment ordering
+# ------------------------------------------------------------------------------
+
+variable "deployment_dependencies" {
+  description = <<-EOF
+    Opaque values from other modules that must finish applying before this
+    module creates any resources. Wire this to the modules Security Hub should
+    run after (e.g. [module.guardduty, module.inspector]).
+
+    Consumed only by an internal resource gate that the module's entry
+    resources depend on. Unlike a module-level depends_on, this does NOT defer
+    the module's data sources to apply time, so for_each over organization data
+    keeps working at plan time.
+  EOF
+  type        = any
+  default     = null
 }
 
 # ------------------------------------------------------------------------------

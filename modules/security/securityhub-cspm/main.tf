@@ -8,11 +8,24 @@
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
+# Deployment gate — sequences this module's resources after the modules wired
+# into var.deployment_dependencies (e.g. GuardDuty, Inspector). The module's
+# entry resources depend on this gate. Because only resources (never data
+# sources) reference it, the module's data sources are still read at plan time,
+# so the for_each over organization OUs keeps working.
+# ------------------------------------------------------------------------------
+resource "terraform_data" "deployment_gate" {
+  input = var.deployment_dependencies
+}
+
+# ------------------------------------------------------------------------------
 # Enable Security Hub CSPM in the delegated administrator (security/audit)
 # account. Uses consolidated control findings for cross-standard deduplication.
 # ------------------------------------------------------------------------------
 resource "aws_securityhub_account" "this" {
   control_finding_generator = "SECURITY_CONTROL"
+
+  depends_on = [terraform_data.deployment_gate]
 }
 
 # ------------------------------------------------------------------------------
@@ -36,6 +49,8 @@ resource "aws_securityhub_organization_admin_account" "this" {
   provider = aws.org-management
 
   admin_account_id = var.delegated_admin_account_id
+
+  depends_on = [terraform_data.deployment_gate]
 }
 
 # ------------------------------------------------------------------------------
@@ -51,6 +66,27 @@ resource "aws_securityhub_finding_aggregator" "this" {
 }
 
 # ------------------------------------------------------------------------------
+# Pause to let the organization data finish syncing before enabling CENTRAL
+# configuration. Registering the delegated administrator kicks off an
+# asynchronous organization sync. Enabling central configuration before that
+# sync completes fails with:
+#   "Central configuration couldn't be enabled because data from organization
+#    <org-id> is still syncing. Retry later." (ResourceNotFoundException, 404)
+#
+# The clock starts at delegated-admin registration (the sync trigger), so the
+# aggregator creation overlaps this window. time_sleep only pauses on create
+# (no triggers), so this cost is paid once on initial provisioning.
+# ------------------------------------------------------------------------------
+resource "time_sleep" "after_org_admin_sync" {
+  create_duration = "90s"
+
+  depends_on = [
+    aws_securityhub_organization_admin_account.this,
+    aws_securityhub_finding_aggregator.this,
+  ]
+}
+
+# ------------------------------------------------------------------------------
 # Organization configuration — CENTRAL mode. Disables legacy auto-enable so
 # that all account configuration is managed exclusively through configuration
 # policies.
@@ -63,7 +99,10 @@ resource "aws_securityhub_organization_configuration" "this" {
     configuration_type = "CENTRAL"
   }
 
-  depends_on = [aws_securityhub_finding_aggregator.this]
+  depends_on = [
+    aws_securityhub_finding_aggregator.this,
+    time_sleep.after_org_admin_sync,
+  ]
 }
 
 # ------------------------------------------------------------------------------

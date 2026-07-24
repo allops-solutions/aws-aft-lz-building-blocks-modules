@@ -9,21 +9,26 @@ locals {
       for ou in data.aws_organizations_organizational_units.root.children :
       ou.id if ou.name == name
     ])
-    if(length(controls.enabled_controls) > 0 && name != "Suspended") || name == "Security"
+    if(length(controls.enabled_controls) > 0 && name != "Suspended" && name != "Security" && name != "Account Factory for Terraform")
     # Security OU should be potentially added in future if it is justified or needed as a
     # variable option of the module. Control Tower does not enable Config in the Account
   }
 
   # ----------------------------------------------------------------------------
-  # Association targets — CT-managed OU IDs.
+  # Association targets — CT-managed OU IDs plus the delegated administrator
+  # (audit) account itself.
   # Security Hub configuration policies can target OUs directly, so no need
-  # to enumerate individual accounts.
-  # Excluded account IDs are removed from the target set.
+  # to enumerate individual accounts. The audit account is not a member of a
+  # CT-managed OU target, so it is added explicitly here to bring the account
+  # this customization is deployed into under the configuration policy.
+  # Control Tower enables AWS Config in the audit account, so it satisfies the
+  # central-configuration prerequisite (unlike the management account).
   # ----------------------------------------------------------------------------
   management_account_id = data.aws_organizations_organization.org.master_account_id
 
   association_targets = setunion(
     toset(values(local.ct_managed_ou_ids)),
+    toset([var.delegated_admin_account_id]),
     # toset([local.management_account_id]),
     # This should be potentially added in future if it is justified or needed as a
     # variable option of the module. Control Tower does not enable Config in the Account

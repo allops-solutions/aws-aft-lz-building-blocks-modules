@@ -28,6 +28,8 @@ resource "aws_sns_topic" "notifications" {
   display_name = "aws-security-hub-notifications"
 
   tags = var.tags
+
+  depends_on = [terraform_data.deployment_gate]
 }
 
 # ------------------------------------------------------------------------------
@@ -98,6 +100,8 @@ resource "aws_iam_role" "formatter" {
   assume_role_policy = data.aws_iam_policy_document.formatter_assume.json
 
   tags = var.tags
+
+  depends_on = [terraform_data.deployment_gate]
 }
 
 data "aws_iam_policy_document" "formatter" {
@@ -147,6 +151,8 @@ resource "aws_cloudwatch_log_group" "formatter" {
   retention_in_days = 90
 
   tags = var.tags
+
+  depends_on = [terraform_data.deployment_gate]
 }
 
 data "archive_file" "formatter" {
@@ -202,6 +208,8 @@ resource "aws_cloudwatch_event_rule" "findings" {
   })
 
   tags = var.tags
+
+  depends_on = [terraform_data.deployment_gate]
 }
 
 resource "aws_cloudwatch_event_target" "formatter" {
