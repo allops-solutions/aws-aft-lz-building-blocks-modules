@@ -1,117 +1,118 @@
 # Organizational Units Module
 
-Manages AWS organizational units (OUs) for AWS Control Tower, including OU creation, baseline discovery, and automated Control Tower baseline enrollment.
+Manages AWS Organizations Organizational Units (OUs) with automatic Control Tower baseline registration. This module handles creation of nested OUs and automatic enablement of AWSControlTowerBaseline and optional BackupBaseline on all managed OUs.
 
-## Overview
+## Features
 
-This module handles:
-- Creation of child OUs nested under root organizational units
-- Automatic discovery of Control Tower baseline definitions (AWSControlTowerBaseline, BackupBaseline, etc.)
-- Detection of currently-enabled baselines (e.g., Identity Center)
-- Enrollment of AWSControlTowerBaseline on all root and child OUs
-- Optional enrollment of BackupBaseline when enabled
-- Proper dependency sequencing to ensure baselines are applied in the correct order
-
-Root OUs are created in the parent module to avoid circular dependencies with the Control Tower module.
+- Hierarchical OU management: create root OUs and nested child OUs
+- Automatic Control Tower baseline discovery from the CT home region
+- Baseline enablement on root and child OUs with dependency ordering
+- Optional BackupBaseline support
+- Dynamic baseline parameters (Identity Center support)
+- Output of discovered baseline IDs for reference
 
 ## Usage
 
 ```hcl
+# Pin to a specific version by updating the ref tag
+# ref format: organizational-units-<version>
+# Example: organizational-units-v1.0
+
 module "organizational_units" {
-  source = "./modules/organizational-units"
+  source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/organizational-units?ref=organizational-units-v1.0"
 
   ct_home_region       = var.ct_home_region
-  ct_baseline_version  = "1.0"
+  ct_baseline_version  = "3.3"
   enable_backup        = true
-
-  root_ous = {
-    security = aws_organizations_organizational_unit.security
-    workloads = aws_organizations_organizational_unit.workloads
-  }
-
-  organizational_units = {
-    security = {
-      name       = "Security"
-      parent_id  = null
-      parent_key = null
-    }
-    workloads = {
-      name       = "Workloads"
-      parent_id  = null
-      parent_key = null
-    }
-    development = {
-      name       = "Development"
-      parent_id  = aws_organizations_organizational_unit.workloads.id
-      parent_key = "workloads"
-    }
-    staging = {
-      name       = "Staging"
-      parent_id  = aws_organizations_organizational_unit.workloads.id
-      parent_key = "workloads"
-    }
-  }
+  organizational_units = var.organizational_units
+  root_ous             = aws_organizations_organizational_unit.root
 }
+
+# To use a different version, update the ref:
+# source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/organizational-units?ref=organizational-units-v1.1"
 ```
+
+## Module Architecture
+
+This module is designed to work alongside root-level OU creation in the root module:
+
+1. **Root OUs** are created in the root module's `main.tf` (not in this module) to prevent circular dependencies with the `control_tower` module
+2. **Child OUs** are created by this module, nested under root OUs via the `parent_key` reference
+3. **Baselines** are auto-discovered and applied to both root and child OUs
+
+The root module passes `aws_organizations_organizational_unit.root` to this module via `var.root_ous`.
 
 ## Requirements
 
 | Name | Version |
 |------|---------|
 | terraform | >= 1.0 |
-| aws | >= 6.0.0 |
+| aws | >= 6.0 |
 
-**Note:** The AWS provider version >= 6.0.0 is required for `aws_controltower_landing_zone` and baseline resources.
+## Providers
+
+| Name | Version |
+|------|---------|
+| aws | >= 6.0 |
+| external | (latest) |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| ct_home_region | AWS region where Control Tower is deployed. | `string` | | yes |
-| ct_baseline_version | Version of the AWSControlTowerBaseline to enable on OUs. | `string` | | yes |
-| enable_backup | Whether to enable BackupBaseline on each OU. Requires AWSControlTowerBaseline to be enabled first. | `bool` | `false` | no |
-| organizational_units | Full OU map defining both root and child organizational units. Used to derive child OUs for creation. Each OU object must contain `name`, and optionally `parent_id` and `parent_key` for nesting. | `map(object({ name = string, parent_id = optional(string), parent_key = optional(string) }))` | | yes |
-| root_ous | Map of already-created root-level OUs, keyed by logical identifiers. Each value must expose at minimum `{ id, arn }`. Passed from `aws_organizations_organizational_unit.root` in the parent module. | `map(object({ id = string, arn = string }))` | | yes |
+| `ct_home_region` | AWS region where Control Tower is deployed. | `string` | | yes |
+| `ct_baseline_version` | Version of the AWSControlTowerBaseline to enable on OUs. | `string` | | yes |
+| `enable_backup` | Whether to enable BackupBaseline on each OU (requires AWSControlTowerBaseline first). | `bool` | `false` | no |
+| `organizational_units` | Full OU map (same shape as root variable). Used to derive child OUs. Each OU object has `name` (required), `parent_id` (optional), and `parent_key` (optional). Child OUs are identified by a non-null `parent_key`. | `map(object({`<br/>&nbsp;&nbsp;`name       = string`<br/>&nbsp;&nbsp;`parent_id  = optional(string)`<br/>&nbsp;&nbsp;`parent_key = optional(string)`<br/>`}))` | | yes |
+| `root_ous` | Map of already-created root-level OUs, keyed by the same logical keys used in `var.organizational_units`. Each value must expose at minimum `{ id, arn }`. Passed from `aws_organizations_organizational_unit.root` in the root module. | `map(object({`<br/>&nbsp;&nbsp;`id  = string`<br/>&nbsp;&nbsp;`arn = string`<br/>`}))` | | yes |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| child_ous | Map of child OU logical keys to objects containing `id`, `arn`, and `name`. Use this to reference created child OUs in other modules. |
-| baseline_ids | Discovered baseline name to ID map for the Control Tower home region. Includes AWSControlTowerBaseline, BackupBaseline, and other available baselines. |
+| `child_ous` | Map of child OU logical key to `{ id, arn, name }`. Useful for referencing child OUs created by this module. |
+| `baseline_ids` | Discovered baseline name → ID map for the CT home region. Includes all baselines available in the Control Tower home region (e.g., `AWSControlTowerBaseline`, `BackupBaseline`, `IdentityCenterBaseline`). |
 
-## How It Works
+## Notes
 
-### Baseline Discovery
+- Baseline discovery uses an external data source that calls `aws controltower list-baselines` and `aws controltower list-enabled-baselines`. The AWS CLI must be configured and accessible in the Terraform execution environment.
+- The `IdentityCenterEnabledBaselineArn` parameter is automatically populated if Identity Center is already enabled in the Control Tower landing zone.
+- Dependency ordering ensures root baselines are applied before child OUs, and child baselines follow parent baselines.
+- The module requires root OUs to already exist; it does not create them. Root OU creation is managed in the root module to prevent circular dependencies.
 
-The module uses an `external` data source to execute a Python script that:
-1. Calls `list-baselines` to retrieve all available baseline definitions and extract their IDs
-2. Calls `list-enabled-baselines` to detect which baselines are currently active
-3. Specifically detects the IdentityCenterEnabledBaselineArn if Identity Center is deployed
+## Example Configuration
 
-The discovered baseline IDs are used to construct ARNs for enrollment on OUs.
+```hcl
+# variables.tf
+variable "organizational_units" {
+  type = map(object({
+    name       = string
+    parent_id  = optional(string)
+    parent_key = optional(string)
+  }))
+}
 
-### OU Hierarchy
+# terraform.tfvars or locals
+organizational_units = {
+  security = {
+    name = "Security"
+  }
+  workloads = {
+    name = "Workloads"
+  }
+  dev = {
+    name       = "Development"
+    parent_key = "workloads"  # Nests under workloads OU
+  }
+  prod = {
+    name       = "Production"
+    parent_key = "workloads"  # Nests under workloads OU
+  }
+}
+```
 
-- **Root OUs** are created in the parent module and passed to this module via `root_ous`
-- **Child OUs** are created by this module when `parent_key` references a root OU key
-- Nested OUs can reference parent OUs by their logical key in the `organizational_units` map
-
-### Baseline Enrollment Sequence
-
-1. AWSControlTowerBaseline is enrolled on all root OUs
-2. AWSControlTowerBaseline is enrolled on all child OUs (depends on root baseline enrollment)
-3. BackupBaseline is enrolled on root OUs (if `enable_backup = true`, depends on root baseline)
-4. BackupBaseline is enrolled on child OUs (if `enable_backup = true`, depends on child baseline)
-
-This sequencing ensures that baselines are applied in the correct order and that dependencies are satisfied.
-
-### Identity Center Integration
-
-When Identity Center is enabled on the Control Tower landing zone, the module detects the IdentityCenterEnabledBaselineArn and automatically passes it as a parameter to the AWSControlTowerBaseline. This parameter is required for proper Identity Center integration.
-
-## Limitations
-
-- Do not add OUs that are already managed by Control Tower (e.g., Security, Sandbox) to the `organizational_units` map unless you are importing them
-- Root OUs must be created outside this module and passed in via `root_ous`
-- Baseline discovery requires AWS CLI and Python 3 to be available in the Terraform execution environment
+In this example:
+- `security` and `workloads` are root OUs (no `parent_key`)
+- `dev` and `prod` are child OUs nested under `workloads`
+- All OUs receive the AWSControlTowerBaseline
+- If `enable_backup = true`, all OUs also receive the BackupBaseline
