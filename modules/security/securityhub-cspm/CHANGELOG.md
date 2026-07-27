@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0] - 2026-07-27
+
+### Changed
+- Removed "Account Factory for Terraform" from the excluded OUs list in Security Hub CSPM configuration
+
+
 ## [v2.0] - 2026-07-27
 
 ### Changed
