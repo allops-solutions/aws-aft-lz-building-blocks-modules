@@ -1,5 +1,12 @@
 # Changelog
 
+## [v2.0] - 2026-07-27
+
+### Changed
+
+- Removed "Account Factory for Terraform" OU exclusion from Security Hub CSPM controls filter in `locals.tf`
+
+
 ## [v1.0.0] - 2026-07-24
 
 ### Added

@@ -9,7 +9,7 @@ locals {
       for ou in data.aws_organizations_organizational_units.root.children :
       ou.id if ou.name == name
     ])
-    if(length(controls.enabled_controls) > 0 && name != "Suspended" && name != "Security" && name != "Account Factory for Terraform")
+    if(length(controls.enabled_controls) > 0 && name != "Suspended" && name != "Security")
     # Security OU should be potentially added in future if it is justified or needed as a
     # variable option of the module. Control Tower does not enable Config in the Account
   }
