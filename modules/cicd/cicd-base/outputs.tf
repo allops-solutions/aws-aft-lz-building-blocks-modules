@@ -4,16 +4,6 @@
 
 # --- Hub mode outputs ---
 
-output "codebuild_role_arn" {
-  description = "ARN of the CodeBuild service role (hub mode only)."
-  value       = local.is_hub ? aws_iam_role.codebuild[0].arn : null
-}
-
-output "codepipeline_role_arn" {
-  description = "ARN of the CodePipeline service role (hub mode only)."
-  value       = local.is_hub ? aws_iam_role.codepipeline[0].arn : null
-}
-
 output "github_oidc_role_arns" {
   description = "Map of GitHub OIDC role names to their ARNs (hub mode only)."
   value       = { for name, role in aws_iam_role.github_oidc : name => role.arn }

@@ -4,9 +4,10 @@
 # A versatile module that handles both sides of cross-account CI/CD:
 #
 #   deployment_type = "hub" (CICD account):
-#     - GitHub OIDC provider + scoped IAM roles
-#     - CodeBuild/CodePipeline service roles
-#     - All roles get sts:AssumeRole to workload deployment roles
+#     - GitHub OIDC provider + repo-scoped IAM roles (when github_oidc_roles is
+#       non-empty)
+#     - Each pipeline module (e.g. layered-terraform-pipeline) is responsible
+#       for creating its own CodeBuild and CodePipeline service roles.
 #
 #   deployment_type = "spoke" (workload accounts):
 #     - Default deployment role (AdministratorAccess) trusting CICD account
@@ -27,8 +28,6 @@ locals {
   # Architectural constants — not configurable
   deployer_role_name       = "cicd-deployer"
   deployer_role_policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
-  codebuild_role_name      = "cicd-codebuild-deployer"
-  codepipeline_role_name   = "cicd-codepipeline-service"
 }
 
 # ==============================================================================
@@ -38,10 +37,15 @@ locals {
 resource "aws_iam_openid_connect_provider" "github" {
   count = local.enable_github_oidc ? 1 : 0
 
-  url             = "https://token.actions.githubusercontent.com"
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1"]
-  tags            = var.tags
+  url            = "https://token.actions.githubusercontent.com"
+  client_id_list = ["sts.amazonaws.com"]
+
+  # GitHub rotates its TLS certificate periodically. AWS IAM now auto-retrieves
+  # the thumbprint when this list is empty, which is the recommended approach
+  # going forward — no manual rotation needed when GitHub rotates again.
+  thumbprint_list = []
+
+  tags = var.tags
 }
 
 # ==============================================================================
@@ -115,194 +119,6 @@ resource "aws_iam_role_policy_attachment" "github_oidc_extra" {
 
   role       = aws_iam_role.github_oidc[each.value.role_name].name
   policy_arn = each.value.policy_arn
-}
-
-# ==============================================================================
-# HUB MODE — CodeBuild Service Role
-# ==============================================================================
-
-data "aws_iam_policy_document" "codebuild_trust" {
-  count = local.is_hub ? 1 : 0
-
-  statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["codebuild.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "codebuild" {
-  count = local.is_hub ? 1 : 0
-
-  name               = local.codebuild_role_name
-  assume_role_policy = data.aws_iam_policy_document.codebuild_trust[0].json
-  tags               = var.tags
-}
-
-data "aws_iam_policy_document" "codebuild_permissions" {
-  count = local.is_hub ? 1 : 0
-
-  statement {
-    sid       = "AssumeWorkloadRoles"
-    effect    = "Allow"
-    actions   = ["sts:AssumeRole"]
-    resources = ["arn:aws:iam::*:role/${local.deployer_role_name}"]
-  }
-
-  statement {
-    sid    = "CloudWatchLogs"
-    effect = "Allow"
-    actions = [
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-    ]
-    resources = ["arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/codebuild/*"]
-  }
-
-  statement {
-    sid    = "PipelineArtifacts"
-    effect = "Allow"
-    actions = [
-      "s3:GetObject",
-      "s3:GetObjectVersion",
-      "s3:GetBucketVersioning",
-      "s3:PutObject",
-      "s3:ListBucket",
-    ]
-    resources = [
-      "arn:aws:s3:::*pipeline-artifacts*",
-      "arn:aws:s3:::*pipeline-artifacts*/*",
-    ]
-  }
-
-  statement {
-    sid    = "SSMParameters"
-    effect = "Allow"
-    actions = [
-      "ssm:GetParameter",
-      "ssm:GetParameters",
-      "ssm:GetParametersByPath",
-    ]
-    resources = ["arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/org/cicd/*"]
-  }
-
-  statement {
-    sid    = "KMSDecrypt"
-    effect = "Allow"
-    actions = [
-      "kms:Decrypt",
-      "kms:DescribeKey",
-      "kms:GenerateDataKey",
-    ]
-    resources = ["*"]
-  }
-}
-
-resource "aws_iam_role_policy" "codebuild" {
-  count = local.is_hub ? 1 : 0
-
-  name   = "codebuild-permissions"
-  role   = aws_iam_role.codebuild[0].name
-  policy = data.aws_iam_policy_document.codebuild_permissions[0].json
-}
-
-# ==============================================================================
-# HUB MODE — CodePipeline Service Role
-# ==============================================================================
-
-data "aws_iam_policy_document" "codepipeline_trust" {
-  count = local.is_hub ? 1 : 0
-
-  statement {
-    effect  = "Allow"
-    actions = ["sts:AssumeRole"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["codepipeline.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "codepipeline" {
-  count = local.is_hub ? 1 : 0
-
-  name               = local.codepipeline_role_name
-  assume_role_policy = data.aws_iam_policy_document.codepipeline_trust[0].json
-  tags               = var.tags
-}
-
-data "aws_iam_policy_document" "codepipeline_permissions" {
-  count = local.is_hub ? 1 : 0
-
-  statement {
-    sid    = "ArtifactBucket"
-    effect = "Allow"
-    actions = [
-      "s3:GetObject",
-      "s3:GetObjectVersion",
-      "s3:GetBucketVersioning",
-      "s3:PutObject",
-      "s3:ListBucket",
-    ]
-    resources = [
-      "arn:aws:s3:::*pipeline-artifacts*",
-      "arn:aws:s3:::*pipeline-artifacts*/*",
-    ]
-  }
-
-  statement {
-    sid    = "CodeBuild"
-    effect = "Allow"
-    actions = [
-      "codebuild:BatchGetBuilds",
-      "codebuild:StartBuild",
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid       = "PassCodeBuildRole"
-    effect    = "Allow"
-    actions   = ["iam:PassRole"]
-    resources = [aws_iam_role.codebuild[0].arn]
-  }
-
-  statement {
-    sid    = "CodeStarConnections"
-    effect = "Allow"
-    actions = [
-      "codestar-connections:UseConnection",
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid    = "CodeCommit"
-    effect = "Allow"
-    actions = [
-      "codecommit:GetBranch",
-      "codecommit:GetCommit",
-      "codecommit:UploadArchive",
-      "codecommit:GetUploadArchiveStatus",
-      "codecommit:CancelUploadArchive",
-      "codecommit:GetRepository",
-    ]
-    resources = ["*"]
-  }
-}
-
-resource "aws_iam_role_policy" "codepipeline" {
-  count = local.is_hub ? 1 : 0
-
-  name   = "codepipeline-permissions"
-  role   = aws_iam_role.codepipeline[0].name
-  policy = data.aws_iam_policy_document.codepipeline_permissions[0].json
 }
 
 # ==============================================================================

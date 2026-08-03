@@ -5,7 +5,7 @@
 # so that roles can be discovered across accounts without hardcoding.
 # ==============================================================================
 
-# --- Hub mode: publish service role ARNs ---
+# --- Hub mode: publish account ID ---
 
 resource "aws_ssm_parameter" "hub_account_id" {
   count = local.is_hub ? 1 : 0
@@ -15,28 +15,6 @@ resource "aws_ssm_parameter" "hub_account_id" {
   type        = "String"
   description = "Central CI/CD account ID"
   value       = data.aws_caller_identity.current.account_id
-  tags        = var.tags
-}
-
-resource "aws_ssm_parameter" "codebuild_role" {
-  count = local.is_hub ? 1 : 0
-
-  provider    = aws.aft-management
-  name        = "/org/cicd/service-roles/codebuild"
-  type        = "String"
-  description = "CodeBuild service role ARN in CICD account"
-  value       = aws_iam_role.codebuild[0].arn
-  tags        = var.tags
-}
-
-resource "aws_ssm_parameter" "codepipeline_role" {
-  count = local.is_hub ? 1 : 0
-
-  provider    = aws.aft-management
-  name        = "/org/cicd/service-roles/codepipeline"
-  type        = "String"
-  description = "CodePipeline service role ARN in CICD account"
-  value       = aws_iam_role.codepipeline[0].arn
   tags        = var.tags
 }
 

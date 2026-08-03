@@ -1,62 +1,71 @@
-# CI/CD Module
+# CICD Base Module
 
-A versatile Terraform module for establishing cross-account CI/CD infrastructure on AWS. This module handles both the central CI/CD account (hub) and workload accounts (spokes), enabling secure, role-based deployment workflows with GitHub Actions OIDC, CodeBuild, CodePipeline, and custom deployment roles.
+The `cicd/cicd-base` Terraform module provides the IAM and role-discovery foundation for cross-account CI/CD on AWS. It supports both sides of the architecture:
 
-## Features
+- **Hub mode**: deployed in the central CI/CD account to create a GitHub Actions OIDC provider and repository-scoped IAM roles.
+- **Spoke mode**: deployed in workload accounts to create deployment roles trusted by the central CI/CD account.
 
-- **GitHub Actions OIDC**: Scoped IAM roles for GitHub workflows with fine-grained repository-level access control
-- **Service Roles**: CodeBuild and CodePipeline roles in the hub with cross-account permissions
-- **Custom Deployment Roles**: Spoke-mode support for multiple deployment roles with restricted permissions and inline policies
-- **Cross-Account Discovery**: Automatic role ARN publication to SSM Parameter Store for dynamic discovery
-- **Flexible Configuration**: Support for permissions boundaries, inline policies, and custom policy attachments
+In either mode, role and account information is published to AWS Systems Manager Parameter Store in the AFT management account. Pipeline-specific CodeBuild and CodePipeline service roles remain the responsibility of the pipeline module that uses this foundation.
 
 ## Usage
 
-### Hub Mode (CICD Account)
+The module requires both the default AWS provider and an `aws.aft-management` provider alias. The aliased provider is used to publish discovery parameters in the AFT management account.
 
-Deploy in your central CI/CD AWS account with GitHub OIDC:
+The following example configures the central CI/CD account in hub mode:
 
 ```hcl
-module "cicd_hub" {
+provider "aws" {
+  region = var.region
+}
+
+provider "aws" {
+  alias  = "aft-management"
+  region = var.aft_management_region
+
+  # Configure assume_role here when the AFT management account is accessed
+  # through a role.
+}
+
+module "cicd_base" {
+  # Pin to the released module version. To pin to another specific version,
+  # replace the ref value with the desired release tag, for example:
+  # ref=cicd-cicd-base-v1.1
   source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/cicd/cicd-base?ref=cicd-cicd-base-v1.0"
+
+  providers = {
+    aws                  = aws
+    aws.aft-management   = aws.aft-management
+  }
 
   deployment_type = "hub"
 
   github_oidc_roles = {
     "github-infra-deployer" = {
-      subject_filter = "repo:my-org/my-infra-repo:ref:refs/heads/main"
+      subject_filter = "repo:your-org/your-infra-repo:ref:refs/heads/main"
       policy_arns    = []
-    }
-    "github-app-deployer" = {
-      subject_filter = "repo:my-org/my-app-repo:*"
-      policy_arns    = ["arn:aws:iam::aws:policy/ReadOnlyAccess"]
     }
   }
 
   tags = {
-    Environment = "shared"
-    Module      = "cicd"
-  }
-
-  providers = {
-    aws.aft-management = aws.aft-management
+    ManagedBy = "Terraform"
+    Component = "cicd"
   }
 }
-
-# Pin to a specific version by modifying the ref:
-# ref=cicd-cicd-base-v1.0.1
 ```
 
-### Spoke Mode (Workload Account)
-
-Deploy in workload accounts with cross-account trust to the hub:
+For a workload account, use the same module source with `deployment_type = "spoke"` and provide the central CI/CD account ID:
 
 ```hcl
-module "cicd_spoke" {
+module "cicd_base" {
   source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/cicd/cicd-base?ref=cicd-cicd-base-v1.0"
 
-  deployment_type  = "spoke"
-  cicd_account_id  = "123456789012"  # Your CICD account ID
+  providers = {
+    aws                = aws
+    aws.aft-management = aws.aft-management
+  }
+
+  deployment_type = "spoke"
+  cicd_account_id = var.cicd_account_id
 
   custom_deployment_roles = {
     "app-deployer" = {
@@ -64,211 +73,70 @@ module "cicd_spoke" {
       inline_policy_json   = null
       permissions_boundary = null
     }
-    "data-deployer" = {
-      policy_arns = [
-        "arn:aws:iam::aws:policy/AmazonS3FullAccess",
-        "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
-      ]
-      inline_policy_json   = null
-      permissions_boundary = "arn:aws:iam::aws:policy/PowerUserAccess"
-    }
   }
 
   tags = {
-    Environment = "production"
-    Module      = "cicd"
-  }
-
-  providers = {
-    aws.aft-management = aws.aft-management
+    ManagedBy = "Terraform"
+    Component = "cicd"
   }
 }
 ```
+
+### Hub mode
+
+Hub mode creates the GitHub OIDC provider only when `github_oidc_roles` is non-empty. Each configured role:
+
+- Trusts GitHub Actions through the GitHub OIDC provider.
+- Restricts access using the configured `subject_filter`.
+- Can assume `cicd-deployer` roles in workload accounts.
+- Can receive additional managed policies through `policy_arns`.
+
+The hub account ID is published at `/org/core/accounts/cicd`. Each GitHub OIDC role ARN is published at `/org/cicd/service-roles/github-oidc/<role-name>`.
+
+### Spoke mode
+
+Spoke mode creates the fixed-name `cicd-deployer` role and attaches the AWS-managed `AdministratorAccess` policy. The role trusts the root principal of `cicd_account_id`.
+
+Additional roles can be declared in `custom_deployment_roles`. These roles use the same trust relationship and may have managed policies, an inline JSON policy, and a permissions boundary.
+
+The default deployer ARN is published at `/org/cicd/roles/<account-id>/deployer`. Custom role ARNs are published at `/org/cicd/roles/<account-id>/custom/<role-name>` in the AFT management account.
 
 ## Requirements
 
 | Name | Version |
-|------|---------|
-| terraform | >= 1.6.0 |
-| aws | >= 6.23.0 |
+| --- | --- |
+| Terraform | `>= 1.6.0` |
+| AWS provider | `>= 6.23.0` |
 
-## Providers
-
-| Name | Version | Alias |
-|------|---------|-------|
-| aws | >= 6.23.0 | `aws` (primary), `aws.aft-management` (required) |
-
-The module requires a provider alias `aws.aft-management` pointing to the AFT management account for SSM parameter storage. Configure it in your provider block:
-
-```hcl
-provider "aws" {
-  alias  = "aft-management"
-  region = var.aws_region
-  assume_role {
-    role_arn = "arn:aws:iam::MANAGEMENT_ACCOUNT_ID:role/OrganizationAccountAccessRole"
-  }
-}
-```
+The module declares the `aws.aft-management` provider configuration alias. The caller must configure and pass that alias in the module's `providers` map.
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
-|------|-------------|------|---------|:--------:|
-| `deployment_type` | Whether this module is deployed in the central CICD account (`hub`) or a workload account (`spoke`). | `string` | N/A | yes |
-| `github_oidc_roles` | Map of GitHub OIDC roles to create (hub mode only). Each role is scoped to specific repositories via `subject_filter` and granted `sts:AssumeRole` on workload deployment roles. | `map(object({ subject_filter = string, policy_arns = optional(list(string), []) }))` | `{}` | no |
-| `cicd_account_id` | AWS account ID of the central CICD account (spoke mode only). The deployment roles trust this account. | `string` | `""` | no |
-| `custom_deployment_roles` | Additional deployment roles with restricted permissions (spoke mode only). Supports policy ARNs, inline policies, and permissions boundaries. | `map(object({ policy_arns = list(string), inline_policy_json = optional(string), permissions_boundary = optional(string) }))` | `{}` | no |
-| `tags` | Tags to apply to all resources. | `map(string)` | N/A | yes |
+| --- | --- | --- | --- | --- |
+| `deployment_type` | Whether the module is deployed in the central CI/CD account (`hub`) or a workload account (`spoke`). | `string` | — | Yes |
+| `github_oidc_roles` | Hub-mode map of GitHub OIDC roles. Each object contains a repository `subject_filter` and optional additional managed `policy_arns`. | `map(object({ subject_filter = string, policy_arns = optional(list(string), []) }))` | `{}` | No |
+| `cicd_account_id` | AWS account ID of the central CI/CD account. Spoke deployment roles trust this account. | `string` | `""` | No |
+| `custom_deployment_roles` | Spoke-mode map of additional deployment roles. Each object contains `policy_arns`, optional `inline_policy_json`, and optional `permissions_boundary`. | `map(object({ policy_arns = list(string), inline_policy_json = optional(string), permissions_boundary = optional(string) }))` | `{}` | No |
+| `tags` | Tags applied to all resources created by the module. | `map(string)` | — | Yes |
 
-### Hub Mode (`deployment_type = "hub"`)
-
-#### `github_oidc_roles`
-
-Map of GitHub OIDC roles with the following attributes:
-
-- **`subject_filter`** (required, string): GitHub Actions subject filter for OIDC token matching. Examples:
-  - `repo:my-org/my-repo:ref:refs/heads/main` — Allow deployments from `main` branch only
-  - `repo:my-org/my-repo:*` — Allow all workflows in the repository
-  - `repo:my-org/my-repo:environment:production` — Allow deployments from the `production` environment
-
-- **`policy_arns`** (optional, list of strings): Additional AWS IAM policy ARNs to attach to the role. Default: `[]`
-
-In hub mode, all GitHub OIDC roles automatically receive `sts:AssumeRole` permissions on the `cicd-deployer` role in all accounts.
-
-### Spoke Mode (`deployment_type = "spoke"`)
-
-#### `cicd_account_id`
-
-The AWS account ID of the central CICD account. Deployment roles in spoke accounts trust this account's root principal.
-
-#### `custom_deployment_roles`
-
-Map of custom deployment roles with the following attributes:
-
-- **`policy_arns`** (required, list of strings): IAM policy ARNs to attach to the role.
-
-- **`inline_policy_json`** (optional, string): An inline IAM policy JSON document. If provided, creates an inline policy on the role. Useful for complex, account-specific permissions. Default: `null`
-
-- **`permissions_boundary`** (optional, string): ARN of a permissions boundary policy. Restricts the maximum permissions the role can assume. Default: `null`
-
-In spoke mode, a default role named `cicd-deployer` with `AdministratorAccess` is always created. This is an architectural constant and cannot be customized.
+`deployment_type` accepts only `hub` or `spoke`. The default spoke deployment role name (`cicd-deployer`) and its `AdministratorAccess` policy are architectural constants and are not configurable.
 
 ## Outputs
 
 | Name | Description |
-|------|-------------|
-| `codebuild_role_arn` | ARN of the CodeBuild service role (hub mode only). Returns `null` in spoke mode. |
-| `codepipeline_role_arn` | ARN of the CodePipeline service role (hub mode only). Returns `null` in spoke mode. |
-| `github_oidc_role_arns` | Map of GitHub OIDC role names to their ARNs (hub mode only). Empty map in spoke mode. |
-| `deployer_role_arn` | ARN of the default deployment role (spoke mode only). Returns `null` in hub mode. |
-| `deployer_role_name` | Name of the default deployment role. Always `"cicd-deployer"`. |
-| `custom_role_arns` | Map of custom deployment role names to their ARNs (spoke mode only). Empty map in hub mode. |
+| --- | --- |
+| `github_oidc_role_arns` | Map of GitHub OIDC role names to their ARNs. Populated in hub mode when OIDC roles are configured. |
+| `deployer_role_arn` | ARN of the default `cicd-deployer` role in spoke mode; `null` in hub mode. |
+| `deployer_role_name` | Name of the default deployment role, always `cicd-deployer`. |
+| `custom_role_arns` | Map of custom deployment role names to their ARNs. Populated in spoke mode. |
 
-## Architecture
+## Versioning
 
-### Hub Mode
+This release is consumed with the following module reference:
 
-In the central CICD account:
-
-1. **GitHub OIDC Provider**: Federated identity provider for GitHub Actions
-2. **GitHub OIDC Roles**: Scoped roles that trust the OIDC provider and can assume workload deployment roles
-3. **CodeBuild Role**: Service role for CodeBuild with artifacts, logging, and workload assumption permissions
-4. **CodePipeline Role**: Service role for CodePipeline with CodeBuild integration and multi-account permissions
-
-All hub roles automatically get `sts:AssumeRole` permissions on the `cicd-deployer` role in all accounts (via the `arn:aws:iam::*:role/cicd-deployer` resource pattern).
-
-### Spoke Mode
-
-In workload accounts:
-
-1. **Default Deployer Role**: Named `cicd-deployer` with AdministratorAccess, trusts the CICD account root
-2. **Custom Roles**: Optional additional roles with restricted policies, permissions boundaries, and inline policies
-3. **Cross-account Trust**: All roles trust the central CICD account, enabling the hub to assume them
-
-## SSM Parameter Publication
-
-Both modes publish role ARNs to the AFT management account's SSM Parameter Store for dynamic discovery.
-
-### Hub Mode Parameters
-
-- `/org/core/accounts/cicd` — CICD account ID
-- `/org/cicd/service-roles/codebuild` — CodeBuild role ARN
-- `/org/cicd/service-roles/codepipeline` — CodePipeline role ARN
-- `/org/cicd/service-roles/github-oidc/{role-name}` — GitHub OIDC role ARN (per role)
-
-### Spoke Mode Parameters
-
-- `/org/cicd/roles/{account-id}/deployer` — Default deployer role ARN
-- `/org/cicd/roles/{account-id}/custom/{role-name}` — Custom role ARN (per role)
-
-## Examples
-
-### Hub with Multiple GitHub OIDC Roles
-
-```hcl
-module "cicd" {
-  source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/cicd/cicd-base?ref=cicd-cicd-base-v1.0"
-
-  deployment_type = "hub"
-
-  github_oidc_roles = {
-    "github-terraform-deployer" = {
-      subject_filter = "repo:my-org/infrastructure:ref:refs/heads/main"
-      policy_arns    = ["arn:aws:iam::aws:policy/ReadOnlyAccess"]
-    }
-    "github-app-ci" = {
-      subject_filter = "repo:my-org/backend-service:*"
-      policy_arns    = []
-    }
-  }
-
-  tags = {
-    Owner = "platform-engineering"
-  }
-
-  providers = {
-    aws.aft-management = aws.aft-management
-  }
-}
+```text
+github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/cicd/cicd-base?ref=cicd-cicd-base-v1.0
 ```
 
-### Spoke with Restricted Custom Role
-
-```hcl
-module "cicd" {
-  source = "github.com/allops-solutions/aws-aft-lz-building-blocks-modules//modules/cicd/cicd-base?ref=cicd-cicd-base-v1.0"
-
-  deployment_type  = "spoke"
-  cicd_account_id  = "123456789012"
-
-  custom_deployment_roles = {
-    "lambda-deployer" = {
-      policy_arns = [
-        "arn:aws:iam::aws:policy/AWSLambda_FullAccess",
-        "arn:aws:iam::aws:policy/AmazonAPIGatewayInvokeFullAccess"
-      ]
-      permissions_boundary = "arn:aws:iam::aws:policy/PowerUserAccess"
-      inline_policy_json   = jsonencode({
-        Version = "2012-10-17"
-        Statement = [{
-          Effect   = "Allow"
-          Action   = "iam:PassRole"
-          Resource = "arn:aws:iam::ACCOUNT_ID:role/lambda-execution-role"
-        }]
-      })
-    }
-  }
-
-  tags = {
-    Environment = "production"
-  }
-
-  providers = {
-    aws.aft-management = aws.aft-management
-  }
-}
-```
-
-## License
-
-This module is part of the AWS AFT Landing Zone Building Blocks.
+The tag follows the pattern `<module-name-with-dashes>-<version>`.
