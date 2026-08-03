@@ -1,0 +1,44 @@
+version: 0.2
+
+phases:
+  install:
+    commands:
+      - |
+        set -euxo pipefail
+        echo "Terraform installation..."
+        cd /tmp
+        curl -fsSL -o terraform_${TERRAFORM_VERSION}_linux_arm64.zip \
+          "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_arm64.zip"
+        unzip -q -o terraform_${TERRAFORM_VERSION}_linux_arm64.zip
+        mv terraform /usr/local/bin/terraform
+        terraform -no-color --version
+  pre_build:
+    commands:
+      - |
+        set -e
+        cd $CODEBUILD_SRC_DIR
+        echo "Assuming cross-account role in CT management account..."
+        CREDS=$(aws sts assume-role \
+          --role-arn "$CT_EXECUTION_ROLE_ARN" \
+          --role-session-name "landing-zone-plan" \
+          --duration-seconds 3600 \
+          --output json)
+        export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.Credentials.AccessKeyId')
+        export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.Credentials.SecretAccessKey')
+        export AWS_SESSION_TOKEN=$(echo "$CREDS" | jq -r '.Credentials.SessionToken')
+        echo "Assumed role successfully. Account: $(aws sts get-caller-identity --query Account --output text)"
+        echo "Terraform init..."
+        terraform init -input=false -no-color
+        echo "Terraform validate..."
+        terraform validate -no-color
+  build:
+    commands:
+      - |
+        cd $CODEBUILD_SRC_DIR
+        echo "Terraform plan..."
+        terraform plan -input=false -no-color -out=output.tfplan
+
+artifacts:
+  files:
+    - "**/*"
+  base-directory: "."
