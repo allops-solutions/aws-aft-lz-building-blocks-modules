@@ -42,7 +42,12 @@ variable "groups" {
     Fields:
     - permission_set: Key of a permission set defined in var.permission_sets.
     - users:          User emails (Identity Center UserName) to assign.
-    - account_ous:    OU names; expands to all active accounts in each OU.
+    - account_ous:    Root-level OU names; expands to all active accounts in
+                      each OU and, recursively, in any OUs nested beneath it.
+    - nested_ous:     OUs one level below a root OU, for narrowing to a
+                      subtree instead of the whole parent. Each entry is
+                      { name = "<child OU>", parent = "<root OU>" } and parent
+                      must be a root-level OU name. Default [].
     - account_ids:    Specific account IDs to include.
     - all_accounts:   Escape hatch. If true, targets every active account.
                       Defaults to false and should stay false in normal use.
@@ -51,8 +56,12 @@ variable "groups" {
     permission_set = string
     users          = optional(list(string), [])
     account_ous    = optional(list(string), [])
-    account_ids    = optional(list(string), [])
-    all_accounts   = optional(bool, false)
+    nested_ous = optional(list(object({
+      name   = string
+      parent = string
+    })), [])
+    account_ids  = optional(list(string), [])
+    all_accounts = optional(bool, false)
   }))
   default = {}
 }
@@ -65,14 +74,23 @@ variable "individual_assignments" {
     Fields:
     - user:           User email (Identity Center UserName).
     - permission_set: Key of a permission set defined in var.permission_sets.
-    - account_ous:    OU names; expands to all active accounts in each OU.
+    - account_ous:    Root-level OU names; expands to all active accounts in
+                      each OU and, recursively, in any OUs nested beneath it.
+    - nested_ous:     OUs one level below a root OU, for narrowing to a
+                      subtree instead of the whole parent. Each entry is
+                      { name = "<child OU>", parent = "<root OU>" } and parent
+                      must be a root-level OU name. Default [].
     - account_ids:    Specific account IDs to include.
   EOT
   type = list(object({
     user           = string
     permission_set = string
     account_ous    = optional(list(string), [])
-    account_ids    = optional(list(string), [])
+    nested_ous = optional(list(object({
+      name   = string
+      parent = string
+    })), [])
+    account_ids = optional(list(string), [])
   }))
   default = []
 }

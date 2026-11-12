@@ -9,41 +9,33 @@
 # so no access path exists.
 # ==============================================================================
 
-# Resolve each referenced OU to the list of active account IDs it contains.
+# Resolve each referenced OU target (bare root name or "parent/child" path) to
+# the list of active account IDs it contains, recursively.
 data "aws_organizations_organizational_unit_descendant_accounts" "this" {
-  for_each  = { for ou_name in local.all_referenced_ous : ou_name => local.ou_id_map[ou_name] if contains(keys(local.ou_id_map), ou_name) }
+  for_each  = local.all_ou_ids
   parent_id = each.value
 }
 
 locals {
   ou_accounts = {
-    for ou_name, _ in data.aws_organizations_organizational_unit_descendant_accounts.this :
-    ou_name => [
-      for account in data.aws_organizations_organizational_unit_descendant_accounts.this[ou_name].accounts :
+    for ou_key, descendants in data.aws_organizations_organizational_unit_descendant_accounts.this :
+    ou_key => [
+      for account in descendants.accounts :
       account.id if account.status == "ACTIVE"
     ]
   }
 
-  # Expand a target spec (all_accounts / account_ids / account_ous) into a
-  # concrete, deduplicated, protected-filtered list of account IDs.
+  # Expand a target spec (all_accounts / account_ids / OUs) into a concrete,
+  # deduplicated, protected-filtered list of account IDs. Unresolvable OU keys
+  # resolve to nothing here so the preconditions in main.tf get to report them
+  # with an actionable message instead of a raw "invalid index" error.
   expand_targets = {
-    for key, spec in merge(
-      { for g_key, g in var.groups : "group/${g_key}" => {
-        account_ous  = g.account_ous
-        account_ids  = g.account_ids
-        all_accounts = g.all_accounts
-      } },
-      { for idx, a in var.individual_assignments : "individual/${idx}" => {
-        account_ous  = a.account_ous
-        account_ids  = a.account_ids
-        all_accounts = false
-      } },
-    ) :
+    for key, spec in local.all_specs :
     key => [
       for account_id in distinct(concat(
         spec.all_accounts ? local.all_account_ids : [],
         spec.account_ids,
-        flatten([for ou_name in spec.account_ous : lookup(local.ou_accounts, ou_name, [])]),
+        flatten([for ou_key in local.spec_ou_keys[key] : lookup(local.ou_accounts, ou_key, [])]),
       )) : account_id
       if !contains(local.protected_account_ids, account_id)
     ]
@@ -99,8 +91,10 @@ locals {
   # via two groups, or via a group and an individual assignment, collapses into
   # exactly one assignment instead of colliding on duplicate resources.
   all_assignments = {
-    for a in concat(local.group_assignments, local.individual_assignment_list) :
-    "${a.permission_set}/${a.email}/${a.account_id}" => a
+    for assignment_key, assignments in {
+      for a in concat(local.group_assignments, local.individual_assignment_list) :
+      "${a.permission_set}/${a.email}/${a.account_id}" => a...
+    } : assignment_key => assignments[0]
   }
 }
 
