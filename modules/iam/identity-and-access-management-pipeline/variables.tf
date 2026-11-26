@@ -20,12 +20,12 @@ variable "branch_name" {
 }
 
 variable "vcs_provider" {
-  description = "Customer VCS Provider - valid inputs are codecommit, github, or githubenterprise"
+  description = "Customer VCS Provider - valid inputs are codecommit, github, githubenterprise, or gitlabselfmanaged"
   type        = string
   default     = "github"
   validation {
-    condition     = contains(["codecommit", "github", "githubenterprise"], var.vcs_provider)
-    error_message = "Valid values for vcs_provider are: codecommit, github githubenterprise"
+    condition     = contains(["codecommit", "github", "githubenterprise", "gitlabselfmanaged"], var.vcs_provider)
+    error_message = "Valid values for vcs_provider are: codecommit, github, githubenterprise, gitlabselfmanaged"
   }
 }
 
@@ -33,6 +33,12 @@ variable "github_enterprise_url" {
   description = "GitHub enterprise URL, if GitHub Enterprise is being used. (inform only if vcs_provider = githubenterprise)"
   type        = string
   default     = "null"
+}
+
+variable "gitlab_selfmanaged_url" {
+  description = "GitLab self-managed URL, scheme and host only, no trailing slash (inform only if vcs_provider = gitlabselfmanaged). Example: https://gitlab.example.com"
+  type        = string
+  default     = null
 }
 
 variable "enable_vpc_config" {

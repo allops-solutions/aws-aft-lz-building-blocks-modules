@@ -1,4 +1,8 @@
 # Changelog
+## [v1.1] - 2026-11-26
+### Added
+- GitLab self-managed support (`vcs_provider = "gitlabselfmanaged"`). Creates a CodeConnections host and connection in the account the pipeline is deployed to. The connection must be authorized once in the console.
+- `gitlab_selfmanaged_url` variable for the GitLab endpoint, for example `https://gitlab.example.com`.
 
 # Changelog
 
