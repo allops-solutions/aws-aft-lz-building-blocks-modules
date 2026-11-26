@@ -303,3 +303,28 @@ resource "aws_cloudwatch_event_target" "this" {
   role_arn = aws_iam_role.start_pipeline.arn
   arn      = aws_codepipeline.this.arn
 }
+
+# Codeconnection host for GitLab self-managed. The pipeline runs in the account
+# it is deployed to, so the host and connection are created there. The
+# connection starts PENDING and must be authorized once in the console.
+resource "aws_codeconnections_host" "gitlab" {
+  count             = local.vcs.is_gitlab ? 1 : 0
+  name              = "${var.solution_name}-gitlab-host"
+  provider_endpoint = var.gitlab_selfmanaged_url
+  provider_type     = "GitLabSelfManaged"
+  dynamic "vpc_configuration" {
+    for_each = var.enable_vpc_config ? [true] : []
+    content {
+      security_group_ids = var.vpc_config.security_groups
+      subnet_ids         = var.vpc_config.subnets
+      vpc_id             = var.vpc_config.vpc_id
+    }
+  }
+}
+
+# Codeconnection for GitLab self-managed
+resource "aws_codeconnections_connection" "gitlab" {
+  count    = local.vcs.is_gitlab ? 1 : 0
+  name     = "${var.solution_name}-gitlab-conn"
+  host_arn = aws_codeconnections_host.gitlab[0].arn
+}
