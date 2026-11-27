@@ -80,7 +80,7 @@ variable "runtime_monitoring_configuration" {
 }
 
 variable "excluded_account_ids" {
-  description = "Account IDs to exclude from GuardDuty enrollment. These accounts will not have GuardDuty enabled even if they are discovered in the AFT metadata table."
+  description = "Account IDs to exclude from GuardDuty enrollment. Excluded members are disassociated and then deleted on the next apply."
   type        = list(string)
   default     = []
 }

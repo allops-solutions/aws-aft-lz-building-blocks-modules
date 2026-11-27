@@ -32,3 +32,5 @@ data "aws_organizations_organizational_unit_descendant_accounts" "ct_managed" {
   provider  = aws.org-management
   parent_id = each.value
 }
+
+data "aws_region" "current" {}

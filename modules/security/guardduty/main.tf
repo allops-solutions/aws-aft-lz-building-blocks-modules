@@ -141,3 +141,27 @@ resource "aws_guardduty_member" "this" {
     time_sleep.after_management_detector,
   ]
 }
+
+# ------------------------------------------------------------------------------
+# Disassociate a member before it is deleted. GuardDuty rejects DeleteMember
+# while the account is still associated. Each instance exists while its account
+# is in member_account_ids. Terraform destroys this instance before the member
+# when the account leaves the set (suspended, moved to an uncovered OU, or
+# excluded), so disassociate runs first. Runs only on destroy.
+# ------------------------------------------------------------------------------
+resource "terraform_data" "member_disassociate" {
+  for_each = local.member_account_ids
+
+  input = {
+    detector_id = aws_guardduty_detector.this.id
+    account_id  = each.value
+    region      = data.aws_region.current.region
+  }
+
+  depends_on = [aws_guardduty_member.this]
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "aws guardduty disassociate-members --profile aft-target --region ${self.input.region} --detector-id ${self.input.detector_id} --account-ids ${self.input.account_id}"
+  }
+}
