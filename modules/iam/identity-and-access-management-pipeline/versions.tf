@@ -7,7 +7,7 @@ terraform {
     aws = {
       source                = "hashicorp/aws"
       version               = ">= 6.23.0"
-      configuration_aliases = [aws.event-source-account]
+      configuration_aliases = [aws.event-source-account, aws.aft-management]
     }
   }
 }

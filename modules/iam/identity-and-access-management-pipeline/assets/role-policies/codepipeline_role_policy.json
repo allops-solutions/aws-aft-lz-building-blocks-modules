@@ -127,9 +127,17 @@
     {
       "Effect": "Allow",
       "Action": [
-        "codestar-connections:UseConnection"
+        "codestar-connections:UseConnection",
+        "codestar-connections:GetConnection",
+        "codestar-connections:GetConnectionToken",
+        "codeconnections:UseConnection",
+        "codeconnections:GetConnection",
+        "codeconnections:GetConnectionToken"
       ],
-      "Resource": "arn:aws:codeconnections:${region}:${account_id}:connection/*"
+      "Resource": [
+        "arn:aws:codeconnections:${region}:${account_id}:connection/*",
+        "arn:aws:codestar-connections:${region}:${account_id}:connection/*"
+      ]
     }
   ]
 }

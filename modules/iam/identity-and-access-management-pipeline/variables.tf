@@ -20,27 +20,34 @@ variable "branch_name" {
 }
 
 variable "vcs_provider" {
-  description = "Customer VCS Provider - valid inputs are codecommit, github, githubenterprise, or gitlabselfmanaged"
+  description = <<-EOT
+    VCS provider: codecommit, github, githubenterprise, gitlab, or gitlabselfmanaged.
+    Leave null (default) to read it from the AFT management account SSM parameter
+    /aft/config/vcs/provider via the aws.aft-management provider.
+  EOT
   type        = string
-  default     = "github"
+  default     = null
   validation {
-    condition     = contains(["codecommit", "github", "githubenterprise", "gitlabselfmanaged"], var.vcs_provider)
-    error_message = "Valid values for vcs_provider are: codecommit, github, githubenterprise, gitlabselfmanaged"
+    condition     = var.vcs_provider == null || contains(["codecommit", "github", "githubenterprise", "gitlab", "gitlabselfmanaged"], coalesce(var.vcs_provider, "x"))
+    error_message = "Valid values for vcs_provider are: codecommit, github, githubenterprise, gitlab, gitlabselfmanaged (or null to read from AFT SSM)."
   }
 }
-
 variable "github_enterprise_url" {
-  description = "GitHub enterprise URL, if GitHub Enterprise is being used. (inform only if vcs_provider = githubenterprise)"
-  type        = string
-  default     = "null"
-}
-
-variable "gitlab_selfmanaged_url" {
-  description = "GitLab self-managed URL, scheme and host only, no trailing slash (inform only if vcs_provider = gitlabselfmanaged). Example: https://gitlab.example.com"
+  description = <<-EOT
+    GitHub Enterprise Server URL, scheme and host only (used when vcs_provider = githubenterprise).
+    Leave null (default) to read it from /aft/config/vcs/github-enterprise-url in the AFT management account.
+  EOT
   type        = string
   default     = null
 }
-
+variable "gitlab_selfmanaged_url" {
+  description = <<-EOT
+    GitLab self-managed URL, scheme and host only (used when vcs_provider = gitlabselfmanaged).
+    Leave null (default) to read it from /aft/config/vcs/gitlab-selfmanaged-url in the AFT management account.
+  EOT
+  type        = string
+  default     = null
+}
 variable "enable_vpc_config" {
   description = "Enable VPC configuration for CodeBuild project and CodeConnections Host."
   type        = bool

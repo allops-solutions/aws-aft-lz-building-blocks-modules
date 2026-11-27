@@ -8,6 +8,12 @@ resource "aws_codeconnections_connection" "github" {
   provider_type = "GitHub"
 }
 
+# Codeconnection for gitlab.com
+resource "aws_codeconnections_connection" "gitlab_com" {
+  count         = local.vcs.is_gitlab ? 1 : 0
+  name          = "${var.solution_name}-gitlab"
+  provider_type = "GitLab"
+}
 # Codeconnection for github enterprise
 resource "aws_codeconnections_connection" "githubenterprise" {
   count    = local.vcs.is_github_enterprise ? 1 : 0
@@ -19,8 +25,14 @@ resource "aws_codeconnections_connection" "githubenterprise" {
 resource "aws_codeconnections_host" "githubenterprise" {
   count             = local.vcs.is_github_enterprise ? 1 : 0
   name              = "${var.solution_name}-gh-ent-host"
-  provider_endpoint = var.github_enterprise_url
+  provider_endpoint = local.github_enterprise_url
   provider_type     = "GitHubEnterpriseServer"
+  lifecycle {
+    precondition {
+      condition     = local.github_enterprise_url != null && can(regex("^https://[^/]+$", coalesce(local.github_enterprise_url, "x")))
+      error_message = "vcs_provider is githubenterprise but no valid GitHub Enterprise URL was found (variable github_enterprise_url or SSM /aft/config/vcs/github-enterprise-url). Expected https://<host>."
+    }
+  }
 
   dynamic "vpc_configuration" {
     for_each = var.enable_vpc_config ? [true] : []
@@ -48,8 +60,8 @@ resource "aws_codecommit_repository" "pipeline" {
 resource "aws_codebuild_project" "plan" {
   count = var.enable_manual_approval ? 1 : 0
 
-  name           = "${var.solution_name}-plan"
-  service_role   = aws_iam_role.codebuild.arn
+  name         = "${var.solution_name}-plan"
+  service_role = aws_iam_role.codebuild.arn
   artifacts {
     type = "CODEPIPELINE"
   }
@@ -97,8 +109,8 @@ resource "aws_codebuild_project" "plan" {
 # Apply project - uses apply-only buildspec when approval is enabled,
 # combined (plan+apply) buildspec when approval is disabled.
 resource "aws_codebuild_project" "apply" {
-  name           = "${var.solution_name}-apply"
-  service_role   = aws_iam_role.codebuild.arn
+  name         = "${var.solution_name}-apply"
+  service_role = aws_iam_role.codebuild.arn
   artifacts {
     type = "CODEPIPELINE"
   }
@@ -257,7 +269,7 @@ resource "aws_codepipeline" "this" {
     }
   }
 
-  # Trigger for GitHub/GitHub Enterprise (V2 pipelines require explicit triggers)
+  # Trigger for all CodeConnections providers (V2 pipelines require explicit triggers)
   dynamic "trigger" {
     for_each = !local.vcs.is_codecommit ? [1] : []
     content {
@@ -304,14 +316,21 @@ resource "aws_cloudwatch_event_target" "this" {
   arn      = aws_codepipeline.this.arn
 }
 
-# Codeconnection host for GitLab self-managed. The pipeline runs in the account
-# it is deployed to, so the host and connection are created there. The
-# connection starts PENDING and must be authorized once in the console.
+# GitLab self-managed: host + connection.
+# The host and connection are created in the account where this pipeline runs.
+# The connection starts PENDING and must be authorized once in the AWS console.
 resource "aws_codeconnections_host" "gitlab" {
-  count             = local.vcs.is_gitlab ? 1 : 0
+  count             = local.vcs.is_gitlab_selfmanaged ? 1 : 0
   name              = "${var.solution_name}-gitlab-host"
-  provider_endpoint = var.gitlab_selfmanaged_url
+  provider_endpoint = local.gitlab_selfmanaged_url
   provider_type     = "GitLabSelfManaged"
+  lifecycle {
+    precondition {
+      condition     = local.gitlab_selfmanaged_url != null && can(regex("^https://[^/]+$", coalesce(local.gitlab_selfmanaged_url, "x")))
+      error_message = "vcs_provider is gitlabselfmanaged but no valid GitLab URL was found (variable gitlab_selfmanaged_url or SSM /aft/config/vcs/gitlab-selfmanaged-url). Expected https://<host>."
+    }
+  }
+
   dynamic "vpc_configuration" {
     for_each = var.enable_vpc_config ? [true] : []
     content {
@@ -322,9 +341,8 @@ resource "aws_codeconnections_host" "gitlab" {
   }
 }
 
-# Codeconnection for GitLab self-managed
 resource "aws_codeconnections_connection" "gitlab" {
-  count    = local.vcs.is_gitlab ? 1 : 0
+  count    = local.vcs.is_gitlab_selfmanaged ? 1 : 0
   name     = "${var.solution_name}-gitlab-conn"
   host_arn = aws_codeconnections_host.gitlab[0].arn
 }
