@@ -28,11 +28,111 @@ variable "top_level_cidr" {
   }
 }
 
+variable "approved_ranges" {
+  description = <<-EOT
+    Optional map of name => { region, cidrs, split } approved for AWS. When set,
+    regional_pools and approved_cidrs are derived from it and the rest of
+    top_level_cidr is reserved. environment_pools then act as templates for the
+    VPC size rules of "production", "non-production" and "shared-services".
+      split = true (default): pools "<name>-production" and "<name>-non-production"
+                              (each CIDR in halves)
+      split = false:          one shared-services pool "<name>" (each CIDR whole, /18 VPCs)
+    Append only: the first CIDR is the primary CIDR of the entry's pools.
+  EOT
+  type = map(object({
+    region = string
+    cidrs  = list(string)
+    split  = optional(bool, true)
+  }))
+  default  = {}
+  nullable = false
+  validation {
+    condition     = alltrue([for name in keys(var.approved_ranges) : can(regex("^[a-z0-9]+(-[a-z0-9]+)*$", name))])
+    error_message = "approved_ranges names must be lowercase letters, digits and hyphens (e.g. workload-1)."
+  }
+  validation {
+    condition     = alltrue([for name, v in var.approved_ranges : can(regex("^[a-z]{2}(-[a-z]+)+-[0-9]$", v.region))])
+    error_message = "Every approved_ranges region must be an AWS region name (e.g. eu-west-1)."
+  }
+  validation {
+    condition     = alltrue([for r, v in var.approved_ranges : length(v.cidrs) > 0])
+    error_message = "Every approved_ranges entry needs at least one CIDR."
+  }
+  validation {
+    condition = alltrue(flatten([
+      for r, v in var.approved_ranges : [
+        for c in v.cidrs : can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$", c)) && can(cidrhost(c, 0))
+      ]
+    ]))
+    error_message = "Every approved_ranges CIDR must be a valid IPv4 CIDR (e.g. 10.100.0.0/15)."
+  }
+  validation {
+    condition = alltrue(flatten([
+      for r, v in var.approved_ranges : [for c in v.cidrs : try(cidrsubnet(c, 0, 0) == c, false)]
+    ]))
+    error_message = "Every approved_ranges CIDR must use its network address (e.g. 10.100.0.0/15, not 10.101.0.0/15)."
+  }
+  validation {
+    condition = alltrue(flatten([
+      for r, v in var.approved_ranges : [for c in v.cidrs : try(tonumber(split("/", c)[1]) <= 16, false)]
+    ]))
+    error_message = "Every approved_ranges CIDR must be /16 or larger."
+  }
+  validation {
+    condition     = length(distinct(flatten([for r, v in var.approved_ranges : v.cidrs]))) == length(flatten([for r, v in var.approved_ranges : v.cidrs]))
+    error_message = "approved_ranges must not contain the same CIDR twice."
+  }
+}
+
+variable "pool_sharing" {
+  description = <<-EOT
+    Map of environment => { org_units = [OU name paths], accounts = [account IDs] }
+    that pools of that environment are shared with via RAM when
+    share_with_organization = true. OUs are name paths from the organization root
+    (up to 3 levels), resolved in the management account. Empty (default): each
+    pool uses its own share_with_* values, or the whole organization if none.
+    When set, every pool's environment needs an entry.
+  EOT
+  type = map(object({
+    org_units = optional(list(string), [])
+    accounts  = optional(list(string), [])
+  }))
+  default  = {}
+  nullable = false
+  validation {
+    condition     = alltrue([for env, s in var.pool_sharing : length(s.org_units) + length(s.accounts) > 0])
+    error_message = "Every pool_sharing entry needs at least one org unit or account."
+  }
+  validation {
+    condition = alltrue(flatten([
+      for env, s in var.pool_sharing : [for p in s.org_units : can(regex("^[^/]+(/[^/]+){0,2}$", p))]
+    ]))
+    error_message = "Each org_units entry must be an OU name path from the root with 1 to 3 levels, e.g. \"Workloads/NonProd\" (no leading or trailing slash)."
+  }
+  validation {
+    condition = alltrue(flatten([
+      for env, s in var.pool_sharing : [for a in s.accounts : can(regex("^[0-9]{12}$", a))]
+    ]))
+    error_message = "Each accounts entry must be a 12-digit AWS account ID."
+  }
+}
+
+variable "vpc_requests" {
+  description = "VPCs that will allocate from the pools (name => pool key and optional netmask). Only used to validate sizes against shared-services pools."
+  type = map(object({
+    pool_key       = string
+    netmask_length = optional(number)
+  }))
+  default  = {}
+  nullable = false
+}
+
 variable "regional_pools" {
   description = <<-EOT
     Map of regional pools to create under the top-level pool.
     Key is a logical name (e.g. "eu-central-1"), value defines the region and CIDR.
     Each regional pool is subdivided into environment pools.
+    Ignored when approved_ranges is set.
   EOT
   type = map(object({
     region           = string
@@ -67,6 +167,7 @@ variable "environment_pools" {
     Map of environment pools to create under each regional pool.
     Key is a logical name (e.g. "production"), value defines the CIDR and parent regional pool key.
     These are the pools from which VPCs actually allocate CIDRs.
+    With approved_ranges, they are templates for the VPC size rules (see there).
   EOT
   type = map(object({
     regional_pool_key                 = string

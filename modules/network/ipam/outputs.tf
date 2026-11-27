@@ -47,7 +47,7 @@ output "ram_resource_share_arns" {
 
 output "approved_cidrs" {
   description = "Ranges approved for AWS use (empty when the reservation mode is off)."
-  value       = var.approved_cidrs
+  value       = local.effective_approved_cidrs
 }
 
 output "reserved_cidrs" {

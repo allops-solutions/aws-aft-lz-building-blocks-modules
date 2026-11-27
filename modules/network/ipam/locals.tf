@@ -11,27 +11,27 @@
 locals {
   ipv4_cidr_regex = "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
 
-  reservation_enabled = length(var.approved_cidrs) > 0
+  reservation_enabled = length(local.effective_approved_cidrs) > 0
 
   # Primary + additional CIDRs per pool
-  regional_pool_cidrs    = { for k, v in var.regional_pools : k => concat([v.cidr], v.additional_cidrs) }
-  environment_pool_cidrs = { for k, v in var.environment_pools : k => concat([v.cidr], v.additional_cidrs) }
+  regional_pool_cidrs    = { for k, v in local.effective_regional_pools : k => concat([v.cidr], v.additional_cidrs) }
+  environment_pool_cidrs = { for k, v in local.effective_environment_pools : k => concat([v.cidr], v.additional_cidrs) }
 
   # Additional CIDRs flattened into stable for_each keys ("<pool>|<cidr>")
   regional_additional_cidrs = {
     for item in flatten([
-      for k, v in var.regional_pools : [for c in v.additional_cidrs : { pool = k, cidr = c }]
+      for k, v in local.effective_regional_pools : [for c in v.additional_cidrs : { pool = k, cidr = c }]
     ]) : "${item.pool}|${item.cidr}" => item
   }
   environment_additional_cidrs = {
     for item in flatten([
-      for k, v in var.environment_pools : [for c in v.additional_cidrs : { pool = k, cidr = c }]
+      for k, v in local.effective_environment_pools : [for c in v.additional_cidrs : { pool = k, cidr = c }]
     ]) : "${item.pool}|${item.cidr}" => item
   }
 
   all_cidrs = distinct(concat(
     [var.top_level_cidr],
-    var.approved_cidrs,
+    local.effective_approved_cidrs,
     flatten(values(local.regional_pool_cidrs)),
     flatten(values(local.environment_pool_cidrs)),
   ))
@@ -46,7 +46,7 @@ locals {
 
   top_level_is_ipv4 = contains(keys(local.cidr_info), var.top_level_cidr)
   top_level         = local.top_level_is_ipv4 ? local.cidr_info[var.top_level_cidr] : { prefix = 0, int = 0 }
-  approved          = [for c in var.approved_cidrs : merge(local.cidr_info[c], { cidr = c }) if contains(keys(local.cidr_info), c)]
+  approved          = [for c in local.effective_approved_cidrs : merge(local.cidr_info[c], { cidr = c }) if contains(keys(local.cidr_info), c)]
 
   # ----------------------------------------------------------------------------
   # Validation findings (empty list = valid). Used by preconditions in main.tf.
@@ -79,7 +79,7 @@ locals {
   ]
 
   environment_cidrs_outside_regional = flatten([
-    for k, v in var.environment_pools : [
+    for k, v in local.effective_environment_pools : [
       for c in local.environment_pool_cidrs[k] : "${k}: ${c}"
       if contains(keys(local.cidr_info), c) && !anytrue([
         for r in lookup(local.regional_pool_cidrs, v.regional_pool_key, []) :

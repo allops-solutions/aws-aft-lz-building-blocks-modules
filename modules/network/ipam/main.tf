@@ -48,7 +48,7 @@ resource "aws_vpc_ipam" "this" {
   tier = "advanced"
 
   dynamic "operating_regions" {
-    for_each = toset(var.operating_regions)
+    for_each = toset(local.effective_operating_regions)
     content {
       region_name = operating_regions.value
     }
@@ -68,6 +68,18 @@ resource "aws_vpc_ipam_pool" "organization" {
 
   # Cross-variable validations: fail the plan when inputs are inconsistent.
   lifecycle {
+    precondition {
+      condition     = length(local.unshared_pools) == 0
+      error_message = "pool_sharing has no entry for the environment of these pools: ${join(", ", local.unshared_pools)}. Add an entry for each environment."
+    }
+    precondition {
+      condition     = length(local.duplicate_pool_names) == 0
+      error_message = "approved_ranges produces the same pool name more than once: ${join(", ", local.duplicate_pool_names)}. Rename the entries."
+    }
+    precondition {
+      condition     = length(local.shared_vpc_size_violations) == 0
+      error_message = "VPCs in a shared-services pool from approved_ranges are /${local.shared_vpc_netmask_length}. Remove the netmask length or set it to ${local.shared_vpc_netmask_length} for: ${join(", ", local.shared_vpc_size_violations)}."
+    }
     precondition {
       condition     = length(local.environment_cidrs_outside_regional) == 0
       error_message = "Every environment pool CIDR (cidr and additional_cidrs) must be inside a CIDR of its regional pool. Invalid: ${join(", ", local.environment_cidrs_outside_regional)}."
@@ -135,7 +147,7 @@ resource "aws_vpc_ipam_pool_cidr_allocation" "reserved" {
 # One per region, nested under the organization pool.
 # ------------------------------------------------------------------------------
 resource "aws_vpc_ipam_pool" "regional" {
-  for_each = var.regional_pools
+  for_each = local.effective_regional_pools
 
   address_family      = "ipv4"
   ipam_scope_id       = aws_vpc_ipam.this.private_default_scope_id
@@ -148,7 +160,7 @@ resource "aws_vpc_ipam_pool" "regional" {
 }
 
 resource "aws_vpc_ipam_pool_cidr" "regional" {
-  for_each     = var.regional_pools
+  for_each     = local.effective_regional_pools
   ipam_pool_id = aws_vpc_ipam_pool.regional[each.key].id
   cidr         = each.value.cidr
 
@@ -173,12 +185,12 @@ resource "aws_vpc_ipam_pool_cidr" "regional_additional" {
 # These are the leaf pools from which VPCs allocate CIDRs.
 # ------------------------------------------------------------------------------
 resource "aws_vpc_ipam_pool" "environment" {
-  for_each = var.environment_pools
+  for_each = local.effective_environment_pools
 
   address_family      = "ipv4"
   ipam_scope_id       = aws_vpc_ipam.this.private_default_scope_id
   source_ipam_pool_id = aws_vpc_ipam_pool.regional[each.value.regional_pool_key].id
-  locale              = var.regional_pools[each.value.regional_pool_key].region
+  locale              = local.effective_regional_pools[each.value.regional_pool_key].region
   description         = "Environment pool: ${each.key}"
 
   allocation_default_netmask_length = each.value.allocation_default_netmask_length
@@ -194,7 +206,7 @@ resource "aws_vpc_ipam_pool" "environment" {
 }
 
 resource "aws_vpc_ipam_pool_cidr" "environment" {
-  for_each     = var.environment_pools
+  for_each     = local.effective_environment_pools
   ipam_pool_id = aws_vpc_ipam_pool.environment[each.key].id
   cidr         = each.value.cidr
 }
@@ -223,7 +235,7 @@ resource "aws_vpc_ipam_pool_cidr" "environment_additional" {
 # keeps allocations non-overlapping regardless of who creates the VPC.
 # ------------------------------------------------------------------------------
 resource "aws_ram_resource_share" "ipam_pools" {
-  for_each = var.share_with_organization ? var.environment_pools : {}
+  for_each = var.share_with_organization ? local.effective_environment_pools : {}
 
   name                      = "ipam-pool-${each.key}"
   allow_external_principals = false
@@ -234,7 +246,7 @@ resource "aws_ram_resource_share" "ipam_pools" {
 }
 
 resource "aws_ram_resource_association" "ipam_pools" {
-  for_each = var.share_with_organization ? var.environment_pools : {}
+  for_each = var.share_with_organization ? local.effective_environment_pools : {}
 
   resource_arn       = aws_vpc_ipam_pool.environment[each.key].arn
   resource_share_arn = aws_ram_resource_share.ipam_pools[each.key].arn
@@ -243,7 +255,7 @@ resource "aws_ram_resource_association" "ipam_pools" {
 # Pools without explicit principals: shared with the whole organization.
 resource "aws_ram_principal_association" "organization" {
   for_each = var.share_with_organization ? {
-    for k, v in var.environment_pools : k => v
+    for k, v in local.effective_environment_pools : k => v
     if length(v.share_with_accounts) + length(v.share_with_org_unit_arns) == 0
   } : {}
 
@@ -255,7 +267,7 @@ resource "aws_ram_principal_association" "organization" {
 resource "aws_ram_principal_association" "targeted" {
   for_each = var.share_with_organization ? {
     for item in flatten([
-      for k, v in var.environment_pools : [
+      for k, v in local.effective_environment_pools : [
         for p in distinct(concat(v.share_with_accounts, v.share_with_org_unit_arns)) : { pool = k, principal = p }
       ]
     ]) : "${item.pool}|${item.principal}" => item
